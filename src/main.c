@@ -38,6 +38,7 @@ typedef struct Entity {
     EntityType type;
     Vector2 dimensions;
     Vector2 position;
+    Vector2 velocity;
     Color color;
     bool alive;
     float delayToShoot;
