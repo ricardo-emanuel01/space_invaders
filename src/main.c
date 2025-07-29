@@ -54,6 +54,8 @@ Entity *buildEntities(Color colors[], float delayToShoot[]) {
     entities[0].dimensions.y = SHIP_HEIGHT;
     entities[0].position.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
     entities[0].position.y = SHIP_POS_Y;
+    entities[0].velocity.x = 0.0f;
+    entities[0].velocity.y = 0.0f;
     entities[0].color = colors[0];
     entities[0].alive = true;
     entities[0].delayToShoot = delayToShoot[entityType];
@@ -66,6 +68,8 @@ Entity *buildEntities(Color colors[], float delayToShoot[]) {
         entities[i+2].dimensions.y = ENEMIES_WIDTH;
         entities[i+2].position.x = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
         entities[i+2].position.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
+        entities[i+2].velocity.x = 0.0f;
+        entities[i+2].velocity.y = 0.0f;
         entities[i+2].color = colors[entityType];
         entities[i+2].alive = true;
         entities[i+2].delayToShoot = delayToShoot[entityType];
@@ -77,6 +81,8 @@ Entity *buildEntities(Color colors[], float delayToShoot[]) {
     entities[1].dimensions.y = ENEMY_SHIP_HEIGHT;
     entities[1].position.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
     entities[1].position.y = ENEMY_SHIP_POS_Y;
+    entities[1].velocity.x = 5.0f;
+    entities[1].velocity.y = 0.0f;
     entities[1].color = colors[entityType];
     entities[1].alive = false;
     entities[1].delayToShoot = delayToShoot[entityType];
@@ -126,6 +132,17 @@ void debugEntities(Entity *entities) {
     }
 }
 
+void updateEntities(Entity *entities) {
+    for (int i = 0; i < N_ENEMIES + 2; ++i) {
+        if (entities[i].alive) {
+            entities[i].position.x += entities[i].velocity.x;
+            entities[i].velocity.x = 0.0f;
+            entities[i].position.y += entities[i].velocity.y;
+            entities[i].velocity.y = 0.0f;
+        }
+    }
+}
+
 int main(void) {
     srand(time(NULL));
     Color colors[] = {RAYWHITE, DARKPURPLE, DARKGREEN, YELLOW};
@@ -153,8 +170,10 @@ int main(void) {
             else if (IsKeyPressed(KEY_N)) exitWindowRequested = false;
         }
 
-        if (IsKeyDown(KEY_LEFT)) entities[0].position.x -= 10;
-        if (IsKeyDown(KEY_RIGHT)) entities[0].position.x += 10;
+        if (IsKeyDown(KEY_LEFT)) entities[0].velocity.x = -10;
+        if (IsKeyDown(KEY_RIGHT)) entities[0].velocity.x = 10;
+
+        updateEntities(entities);
 
         // Without 'BeginDrawing()' and 'EndDrawing()' the mainloop doesn't work
         BeginDrawing();
