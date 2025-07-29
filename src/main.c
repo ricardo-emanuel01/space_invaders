@@ -1,3 +1,4 @@
+# include <stdio.h>
 # include <stdlib.h>
 # include <time.h>
 # include "raylib.h"
@@ -20,73 +21,76 @@
 # define N_ENEMIES (N_ENEMIES_ROWS*ENEMIES_PER_ROW)
 # define EXIT_BANNER_HEIGHT 200
 # define EXIT_MESSAGE_FONT_SIZE 75
+# define BULLET_SPEED 75 // pixels/frame
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
 
 typedef enum EntityType {
     SHIP,
-    BULLET,
     ENEMY_SLOW,
     ENEMY_FAST,
     ENEMY_SHIP,
+    BULLET,
 } EntityType;
 
 typedef struct Entity {
     EntityType type;
-    int width;
-    int height;
-    int posX;
-    int posY;
+    Vector2 dimensions;
+    Vector2 position;
     Color color;
     bool alive;
+    float delayToShoot;
 } Entity;
 
-Entity *buildEntities() {
+Entity *buildEntities(Color colors[], float delayToShoot[]) {
     EntityType entityType = SHIP;
 
     Entity *entities = (Entity *)malloc((N_ENEMIES + 2) * sizeof(Entity));
     // Setup player ship
     entities[0].type = entityType;
-    entities[0].width = SHIP_WIDTH;
-    entities[0].height = SHIP_HEIGHT;
-    entities[0].posX = (SCREEN_WIDTH - SHIP_WIDTH)/2;
-    entities[0].posY = SHIP_POS_Y;
-    entities[0].color = RAYWHITE;
+    entities[0].dimensions.x = SHIP_WIDTH;
+    entities[0].dimensions.y = SHIP_HEIGHT;
+    entities[0].position.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
+    entities[0].position.y = SHIP_POS_Y;
+    entities[0].color = colors[0];
     entities[0].alive = true;
+    entities[0].delayToShoot = delayToShoot[entityType];
 
     int enemiesXOffSet = (SCREEN_WIDTH - ENEMIES_PER_ROW*(ENEMIES_WIDTH + ENEMIES_GAP_X))/2;
     for (int i = 0; i < N_ENEMIES; ++i) {
-        if (i % N_ENEMIES_ROWS == 0) entityType++;
+        if (i % (N_ENEMIES/2) == 0) entityType++;
         entities[i+2].type = entityType;
-        entities[i+2].width = ENEMIES_WIDTH;
-        entities[i+2].height = ENEMIES_WIDTH;
-        entities[i+2].posX = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
-        entities[i+2].posY = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
-        entities[i+2].color = DARKGREEN;
+        entities[i+2].dimensions.x = ENEMIES_WIDTH;
+        entities[i+2].dimensions.y = ENEMIES_WIDTH;
+        entities[i+2].position.x = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
+        entities[i+2].position.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
+        entities[i+2].color = colors[entityType];
         entities[i+2].alive = true;
+        entities[i+2].delayToShoot = delayToShoot[entityType];
     }
 
     // Setup Enemy ship
-    entities[1].type = entityType;
-    entities[1].width = ENEMY_SHIP_WIDTH;
-    entities[1].height = ENEMY_SHIP_HEIGHT;
-    entities[1].posX = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
-    entities[1].posY = ENEMY_SHIP_POS_Y;
-    entities[1].color = PURPLE;
+    entities[1].type = ++entityType;
+    entities[1].dimensions.x = ENEMY_SHIP_WIDTH;
+    entities[1].dimensions.y = ENEMY_SHIP_HEIGHT;
+    entities[1].position.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
+    entities[1].position.y = ENEMY_SHIP_POS_Y;
+    entities[1].color = colors[entityType];
     entities[1].alive = false;
+    entities[1].delayToShoot = delayToShoot[entityType];
 
     return entities;
 }
 
 void drawEntites(Entity *entities) {
-    for (int i = 0; i < N_ENEMIES + 2; ++i) {
+    for (int i = 0; i < N_ENEMIES+2; ++i) {
         if (entities[i].alive)
             DrawRectangle(
-                entities[i].posX,
-                entities[i].posY,
-                entities[i].width,
-                entities[i].height,
+                entities[i].position.x,
+                entities[i].position.y,
+                entities[i].dimensions.x,
+                entities[i].dimensions.y,
                 entities[i].color
             );
     }
@@ -109,8 +113,23 @@ void drawExitMessage() {
     );
 }
 
+void debugEntities(Entity *entities) {
+    for (int i = 0; i < N_ENEMIES+2; ++i) {
+        printf("Entity at index: %d\n", i);
+        printf("\tType: %d\n", entities[i].type);
+        printf("\tWidth: %lf\n", entities[i].dimensions.x);
+        printf("\tHeight: %lf\n", entities[i].dimensions.y);
+        printf("\tposX: %lf\n", entities[i].position.x);
+        printf("\tposY: %lf\n", entities[i].position.y);
+        printf("\tDelay to shoot: %.2lf\n", entities[i].delayToShoot);
+    }
+}
+
 int main(void) {
     srand(time(NULL));
+    Color colors[] = {RAYWHITE, DARKPURPLE, DARKGREEN, YELLOW};
+    float delayToShoot[] = {0.5f, 3.0f, 1.0f, 0.1f};
+
     InitWindow(
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
@@ -120,7 +139,7 @@ int main(void) {
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
     DisableCursor();
-    Entity *entities = buildEntities();
+    Entity *entities = buildEntities(colors, delayToShoot);
     bool exitWindowRequested = false;
     bool exitWindow = false;
     Font defaultFont = GetFontDefault();
@@ -133,8 +152,8 @@ int main(void) {
             else if (IsKeyPressed(KEY_N)) exitWindowRequested = false;
         }
 
-        if (IsKeyDown(KEY_LEFT)) entities[0].posX -= 10;
-        if (IsKeyDown(KEY_RIGHT)) entities[0].posX += 10;
+        if (IsKeyDown(KEY_LEFT)) entities[0].position.x -= 10;
+        if (IsKeyDown(KEY_RIGHT)) entities[0].position.x += 10;
 
         // Without 'BeginDrawing()' and 'EndDrawing()' the mainloop doesn't work
         BeginDrawing();
