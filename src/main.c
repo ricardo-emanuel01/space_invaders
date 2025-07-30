@@ -52,7 +52,7 @@ typedef struct Entity {
     Color color;
     bool alive;
     float delayToFire;
-    bool canShot;
+    bool canFire;
     double lastShotTime;
     EntityType shotSrc;
 } Entity;
@@ -82,7 +82,7 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[SHIP].color = colors[0];
     entities[SHIP].alive = true;
     entities[SHIP].delayToFire = delayToFire[entityType];
-    entities[SHIP].canShot = true;
+    entities[SHIP].canFire = true;
     entities[SHIP].lastShotTime = GetTime();
 
     int enemiesXOffSet = (SCREEN_WIDTH - ENEMIES_PER_ROW*(ENEMIES_WIDTH + ENEMIES_GAP_X))/2;
@@ -98,7 +98,7 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i+2].color = colors[entityType];
         entities[i+2].alive = true;
         entities[i+2].delayToFire = delayToFire[entityType];
-        entities[i+2].canShot = true;
+        entities[i+2].canFire = true;
         entities[i+2].lastShotTime = GetTime();
     }
 
@@ -113,7 +113,7 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[ENEMY_SHIP].color = colors[entityType];
     entities[ENEMY_SHIP].alive = false;
     entities[ENEMY_SHIP].delayToFire = delayToFire[entityType++];
-    entities[ENEMY_SHIP].canShot = true;
+    entities[ENEMY_SHIP].canFire = true;
     entities[ENEMY_SHIP].lastShotTime = GetTime();
 
     for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
@@ -197,15 +197,15 @@ void debugEntities(Entity *entities) {
     }
 }
 
-void shot(GameState *gameState, int shooterIdx) {
-    if (!gameState->entities[shooterIdx].canShot) return;
+void fire(GameState *gameState, int shooterIdx) {
+    if (!gameState->entities[shooterIdx].canFire) return;
 
     Entity *entities = gameState->entities;
     // There are a small number of bullets, so for now a linear search is ok
     int firstBulletAvailable;
     for (firstBulletAvailable = FIRST_IDX_BULLETS; firstBulletAvailable < ENTITIES_ARRAY_SIZE && entities[firstBulletAvailable].alive; ++firstBulletAvailable);
     if (!entities[firstBulletAvailable].alive) {
-        entities[shooterIdx].canShot = false;
+        entities[shooterIdx].canFire = false;
         entities[shooterIdx].lastShotTime = GetTime();
 
         entities[firstBulletAvailable].position.x = entities[shooterIdx].position.x + 0.5*entities[shooterIdx].size.x;
@@ -219,8 +219,6 @@ void shot(GameState *gameState, int shooterIdx) {
             entities[firstBulletAvailable].velocity.y = BULLET_SPEED;
             entities[firstBulletAvailable].position.y = entities[shooterIdx].position.y + entities[shooterIdx].size.y;
         }
-
-
     }
 }
 
@@ -288,7 +286,7 @@ void detectCollision(GameState *gameState) {
 void enemyAI(GameState *gameState) {
     int enemyIndex = rand() % (N_ENEMIES*30);
     if (enemyIndex > ENEMY_SHIP && enemyIndex < FIRST_IDX_BULLETS)
-        shot(gameState, enemyIndex);
+        fire(gameState, enemyIndex);
 }
 
 void updateEntities(GameState *gameState) {
@@ -328,7 +326,7 @@ void updateEntities(GameState *gameState) {
             gameState->entities[i].velocity.y = 0.0f;
             double currentTime = GetTime();
             if (currentTime - gameState->entities[i].lastShotTime > gameState->entities[i].delayToFire) {
-                gameState->entities[i].canShot = true;
+                gameState->entities[i].canFire = true;
             }
         } else if (gameState->entities[i].position.y < 0.0f || gameState->entities[i].position.y > 1080.0f) {
             gameState->entities[i].alive = false;
@@ -352,7 +350,7 @@ void processInput(GameState *gameState) {
 
     if (IsKeyDown(KEY_LEFT)) gameState->entities[0].velocity.x = -10;
     if (IsKeyDown(KEY_RIGHT)) gameState->entities[0].velocity.x = 10;
-    if (IsKeyDown(KEY_SPACE)) shot(gameState, SHIP);
+    if (IsKeyDown(KEY_SPACE)) fire(gameState, SHIP);
 }
 
 int main(void) {
