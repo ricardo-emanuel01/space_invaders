@@ -12,7 +12,7 @@
 # define ENEMY_SHIP_WIDTH SHIP_WIDTH
 # define ENEMY_SHIP_HEIGHT SHIP_HEIGHT
 # define ENEMY_SHIP_POS_Y 50
-# define ENEMIES_GAP_X 10
+# define ENEMIES_GAP_X 20
 # define ENEMIES_GAP_Y 15
 # define ENEMIES_WIDTH 40
 # define ENEMIES_HEIGHT ENEMIES_WIDTH
@@ -24,9 +24,10 @@
 # define EXIT_MESSAGE_FONT_SIZE 75
 # define BULLET_SPEED 20 // pixels/frame
 # define N_BULLETS 100
-# define BULLET_WIDTH 20
+# define BULLET_WIDTH 10
 # define BULLET_HEIGHT 40
 # define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS)
+# define FIRST_IDX_BULLETS (2+N_ENEMIES)
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
@@ -49,6 +50,7 @@ typedef struct Entity {
     float delayToFire;
     bool canShot;
     double lastShotTime;
+    EntityType shotSrc;
 } Entity;
 
 Entity *buildEntities(Color colors[], float delayToFire[]) {
@@ -153,6 +155,83 @@ void debugEntities(Entity *entities) {
     }
 }
 
+void shot(Entity *entities, int shooterIdx) {
+    // There are a small number of bullets, so for now a linear search is ok
+    for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
+        if (!entities[i].alive) {
+            entities[shooterIdx].canShot = false;
+            entities[shooterIdx].lastShotTime = GetTime();
+
+            entities[i].position.x = entities[shooterIdx].position.x + 0.5*entities[shooterIdx].dimensions.x;
+            entities[i].alive = true;
+            entities[i].shotSrc = entities[shooterIdx].type;
+
+            if (entities[shooterIdx].type == SHIP) {
+                entities[i].velocity.y = -BULLET_SPEED;
+                entities[i].position.y = entities[shooterIdx].position.y;
+            } else {
+                entities[i].velocity.y = BULLET_SPEED;
+                entities[i].position.y = entities[shooterIdx].position.y + entities[shooterIdx].dimensions.y;
+            }
+            break;
+        }
+    }
+}
+
+// Implements a naive collision detection
+void detectCollision(Entity *entities) {
+    for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
+        if (!entities[i].alive) continue;
+
+        Vector2 upperLeft = entities[i].position;
+        Vector2 upperRight = {
+            upperLeft.x + entities[i].dimensions.x,
+            upperLeft.y
+        };
+        Vector2 lowerLeft = {
+            upperLeft.x,
+            upperLeft.y + entities[i].dimensions.y
+        };
+        Vector2 lowerRight = {
+            lowerLeft.x + entities[i].dimensions.x,
+            lowerLeft.y
+        };
+
+        for (int current_bullet = FIRST_IDX_BULLETS; current_bullet < ENTITIES_ARRAY_SIZE; ++current_bullet) {
+            if (!entities[current_bullet].alive) continue;
+            if (entities[current_bullet].shotSrc == entities[i].type) continue;
+            if (
+                (entities[i].type >= ENEMY_SLOW && entities[i].type <= ENEMY_SHIP) &&
+                (entities[current_bullet].shotSrc >= ENEMY_SLOW && entities[current_bullet].shotSrc <= ENEMY_SHIP)
+            ) continue;
+
+            Vector2 bulletUpperLeft = entities[current_bullet].position;
+            Vector2 bulletUpperRight = {
+                bulletUpperLeft.x + BULLET_WIDTH,
+                bulletUpperLeft.y
+            };
+            Vector2 bulletLowerLeft = {
+                bulletUpperLeft.x,
+                bulletUpperLeft.y + BULLET_HEIGHT
+            };
+            Vector2 bulletLowerRight = {
+                bulletUpperLeft.x + BULLET_WIDTH,
+                bulletLowerLeft.y
+            };
+
+            if (
+                (bulletUpperRight.x > upperLeft.x && bulletUpperRight.x < upperRight.x && bulletUpperRight.y > upperLeft.y && bulletUpperRight.y < lowerLeft.y) ||
+                (bulletUpperLeft.x > upperLeft.x && bulletUpperLeft.x < upperRight.x && bulletUpperLeft.y > upperLeft.y && bulletUpperLeft.y < lowerLeft.y) ||
+                (bulletLowerRight.x > lowerLeft.x && bulletLowerRight.x < lowerRight.x && bulletLowerRight.y > upperLeft.y && bulletLowerRight.y < lowerLeft.y) ||
+                (bulletLowerLeft.x > lowerLeft.x && bulletLowerLeft.x < lowerRight.x && bulletLowerLeft.y > upperLeft.y && bulletLowerLeft.y < lowerLeft.y)
+            ) {
+                entities[i].alive = false;
+                entities[current_bullet].alive = false;
+            }
+        }
+    }
+}
+
 void updateEntities(Entity *entities) {
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         if (entities[i].alive) {
@@ -167,30 +246,8 @@ void updateEntities(Entity *entities) {
                 if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
                     entities[i].canShot = true;
                 }
-            }
-            if (entities[i].position.y < 0.0f) entities[i].alive = false;
-        }
-    }
-}
-
-void shot(Entity *entities, int shooterIdx) {
-    // There are a small number of bullets, so for now a linear search is ok
-    for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
-        if (!entities[i].alive) {
-            entities[shooterIdx].canShot = false;
-            entities[shooterIdx].lastShotTime = GetTime();
-
-            entities[i].position.x = entities[shooterIdx].position.x + 0.5*entities[shooterIdx].dimensions.x;
-            entities[i].alive = true;
-
-            if (entities[shooterIdx].type == SHIP) {
-                entities[i].velocity.y = -BULLET_SPEED;
-                entities[i].position.y = entities[shooterIdx].position.y;
-            } else {
-                entities[i].velocity.y = BULLET_SPEED;
-                entities[i].position.y = entities[shooterIdx].position.y + entities[shooterIdx].dimensions.y;
-            }
-            break;
+            } else if (entities[i].position.y < 0.0f || entities[i].position.y > 1080.0f)
+                entities[i].alive = false;
         }
     }
 }
@@ -199,19 +256,18 @@ int main(void) {
     srand(time(NULL));
     Color colors[] = {RAYWHITE, DARKPURPLE, DARKGREEN, YELLOW};
     float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
+    Entity *entities = buildEntities(colors, delayToFire);
+    bool exitWindowRequested = false;
+    bool exitWindow = false;
 
     InitWindow(
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         "Space Invaders clone using raylib"
     );
-
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
     DisableCursor();
-    Entity *entities = buildEntities(colors, delayToFire);
-    bool exitWindowRequested = false;
-    bool exitWindow = false;
 
     while (!exitWindow) {
         if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE))
@@ -224,7 +280,8 @@ int main(void) {
             if (IsKeyDown(KEY_LEFT)) entities[0].velocity.x = -10;
             if (IsKeyDown(KEY_RIGHT)) entities[0].velocity.x = 10;
             if (IsKeyDown(KEY_SPACE) && entities[0].canShot) shot(entities, 0);
-    
+
+            detectCollision(entities);
             updateEntities(entities);
         }
 
