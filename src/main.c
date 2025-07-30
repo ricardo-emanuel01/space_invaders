@@ -31,15 +31,16 @@
 # define SCREEN_LIMIT 400
 # define LIMIT_LEFT SCREEN_LIMIT
 # define LIMIT_RIGHT (SCREEN_WIDTH-SCREEN_LIMIT)
+# define WALL_COLISION_DELAY 1.0f
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
 
 typedef enum EntityType {
     SHIP,
+    ENEMY_SHIP,
     ENEMY_SLOW,
     ENEMY_FAST,
-    ENEMY_SHIP,
     BULLET,
 } EntityType;
 
@@ -56,23 +57,33 @@ typedef struct Entity {
     EntityType shotSrc;
 } Entity;
 
-Entity *buildEntities(Color colors[], float delayToFire[]) {
+typedef struct GameState {
+    bool exitWindowRequested;
+    bool exitWindow;
+    bool canCollideOnWall;
+    double timeLastWallCollision;
+    float wallCollisionDelay;
+    int firstAlive;
+    Entity *entities;
+} GameState;
+
+Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     EntityType entityType = SHIP;
 
     Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
     // Setup player ship
-    entities[0].type = entityType;
-    entities[0].dimensions.x = SHIP_WIDTH;
-    entities[0].dimensions.y = SHIP_HEIGHT;
-    entities[0].position.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
-    entities[0].position.y = SHIP_POS_Y;
-    entities[0].velocity.x = 0.0f;
-    entities[0].velocity.y = 0.0f;
-    entities[0].color = colors[0];
-    entities[0].alive = true;
-    entities[0].delayToFire = delayToFire[entityType];
-    entities[0].canShot = true;
-    entities[0].lastShotTime = GetTime();
+    entities[SHIP].type = entityType;
+    entities[SHIP].dimensions.x = SHIP_WIDTH;
+    entities[SHIP].dimensions.y = SHIP_HEIGHT;
+    entities[SHIP].position.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
+    entities[SHIP].position.y = SHIP_POS_Y;
+    entities[SHIP].velocity.x = 0.0f;
+    entities[SHIP].velocity.y = 0.0f;
+    entities[SHIP].color = colors[0];
+    entities[SHIP].alive = true;
+    entities[SHIP].delayToFire = delayToFire[entityType];
+    entities[SHIP].canShot = true;
+    entities[SHIP].lastShotTime = GetTime();
 
     int enemiesXOffSet = (SCREEN_WIDTH - ENEMIES_PER_ROW*(ENEMIES_WIDTH + ENEMIES_GAP_X))/2;
     for (int i = 0; i < N_ENEMIES; ++i) {
@@ -92,18 +103,18 @@ Entity *buildEntities(Color colors[], float delayToFire[]) {
     }
 
     // Setup Enemy ship
-    entities[1].type = ++entityType;
-    entities[1].dimensions.x = ENEMY_SHIP_WIDTH;
-    entities[1].dimensions.y = ENEMY_SHIP_HEIGHT;
-    entities[1].position.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
-    entities[1].position.y = ENEMY_SHIP_POS_Y;
-    entities[1].velocity.x = 5.0f;
-    entities[1].velocity.y = 0.0f;
-    entities[1].color = colors[entityType];
-    entities[1].alive = false;
-    entities[1].delayToFire = delayToFire[entityType++];
-    entities[1].canShot = true;
-    entities[1].lastShotTime = GetTime();
+    entities[ENEMY_SHIP].type = ++entityType;
+    entities[ENEMY_SHIP].dimensions.x = ENEMY_SHIP_WIDTH;
+    entities[ENEMY_SHIP].dimensions.y = ENEMY_SHIP_HEIGHT;
+    entities[ENEMY_SHIP].position.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
+    entities[ENEMY_SHIP].position.y = ENEMY_SHIP_POS_Y;
+    entities[ENEMY_SHIP].velocity.x = 5.0f;
+    entities[ENEMY_SHIP].velocity.y = 0.0f;
+    entities[ENEMY_SHIP].color = colors[entityType];
+    entities[ENEMY_SHIP].alive = false;
+    entities[ENEMY_SHIP].delayToFire = delayToFire[entityType++];
+    entities[ENEMY_SHIP].canShot = true;
+    entities[ENEMY_SHIP].lastShotTime = GetTime();
 
     for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
         entities[i].type = entityType;
@@ -116,7 +127,36 @@ Entity *buildEntities(Color colors[], float delayToFire[]) {
     return entities;
 }
 
+GameState initGame() {
+    srand(time(NULL));
+    const Color colors[] = {RAYWHITE, DARKPURPLE, DARKGREEN, YELLOW};
+    const float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
+    GameState gameState = {
+        .exitWindowRequested=false,
+        .exitWindow=false,
+        .canCollideOnWall=true,
+        .timeLastWallCollision=0.0,
+        .wallCollisionDelay=WALL_COLISION_DELAY,
+        .firstAlive=2,
+        .entities=buildEntities(colors, delayToFire)
+    };
+
+    InitWindow(
+        SCREEN_WIDTH,
+        SCREEN_HEIGHT,
+        "Space Invaders clone using raylib"
+    );
+
+    SetExitKey(KEY_NULL);
+    SetTargetFPS(60);
+    DisableCursor();
+
+    return gameState;
+}
+
 void drawEntites(Entity *entities) {
+    ClearBackground(BLACK);
+    DrawFPS(10, 10);
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         if (entities[i].alive)
             DrawRectangle(
@@ -182,33 +222,33 @@ void shot(Entity *entities, int shooterIdx) {
 }
 
 // Implements a naive collision detection
-void detectCollision(Entity *entities, int *firstAlive) {
+void detectCollision(GameState *gameState) {
     for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
-        if (!entities[i].alive) continue;
+        if (!gameState->entities[i].alive) continue;
 
-        Vector2 upperLeft = entities[i].position;
+        Vector2 upperLeft = gameState->entities[i].position;
         Vector2 upperRight = {
-            upperLeft.x + entities[i].dimensions.x,
+            upperLeft.x + gameState->entities[i].dimensions.x,
             upperLeft.y
         };
         Vector2 lowerLeft = {
             upperLeft.x,
-            upperLeft.y + entities[i].dimensions.y
+            upperLeft.y + gameState->entities[i].dimensions.y
         };
         Vector2 lowerRight = {
-            lowerLeft.x + entities[i].dimensions.x,
+            lowerLeft.x + gameState->entities[i].dimensions.x,
             lowerLeft.y
         };
 
         for (int current_bullet = FIRST_IDX_BULLETS; current_bullet < ENTITIES_ARRAY_SIZE; ++current_bullet) {
-            if (!entities[current_bullet].alive) continue;
-            if (entities[current_bullet].shotSrc == entities[i].type) continue;
+            if (!gameState->entities[current_bullet].alive) continue;
+            if (gameState->entities[current_bullet].shotSrc == gameState->entities[i].type) continue;
             if (
-                (entities[i].type >= ENEMY_SLOW && entities[i].type <= ENEMY_SHIP) &&
-                (entities[current_bullet].shotSrc >= ENEMY_SLOW && entities[current_bullet].shotSrc <= ENEMY_SHIP)
+                (gameState->entities[i].type >= ENEMY_SHIP && gameState->entities[i].type <= ENEMY_FAST) &&
+                (gameState->entities[current_bullet].shotSrc >= ENEMY_SHIP && gameState->entities[current_bullet].shotSrc <= ENEMY_FAST)
             ) continue;
 
-            Vector2 bulletUpperLeft = entities[current_bullet].position;
+            Vector2 bulletUpperLeft = gameState->entities[current_bullet].position;
             Vector2 bulletUpperRight = {
                 bulletUpperLeft.x + BULLET_WIDTH,
                 bulletUpperLeft.y
@@ -228,14 +268,12 @@ void detectCollision(Entity *entities, int *firstAlive) {
                 (bulletLowerRight.x >= lowerLeft.x && bulletLowerRight.x <= lowerRight.x && bulletLowerRight.y >= upperLeft.y && bulletLowerRight.y <= lowerLeft.y) ||
                 (bulletLowerLeft.x >= lowerLeft.x && bulletLowerLeft.x <= lowerRight.x && bulletLowerLeft.y >= upperLeft.y && bulletLowerLeft.y <= lowerLeft.y)
             ) {
-                entities[i].alive = false;
-                entities[current_bullet].alive = false;
+                gameState->entities[i].alive = false;
+                gameState->entities[current_bullet].alive = false;
 
-                if (entities[i].type == ENEMY_SLOW || entities[i].type == ENEMY_FAST) {
-                    if (i == *firstAlive) {
-                        for (int j = i+1; j < FIRST_IDX_BULLETS && !entities[*firstAlive].alive; ++j) {
-                            if (entities[j].alive) *firstAlive = j;
-                        }
+                if (i == gameState->firstAlive) {
+                    for (int j = i+1; j < FIRST_IDX_BULLETS && !gameState->entities[gameState->firstAlive].alive; ++j) {
+                        if (gameState->entities[j].alive) gameState->firstAlive = j;
                     }
                 }
             }
@@ -243,99 +281,84 @@ void detectCollision(Entity *entities, int *firstAlive) {
     }
 }
 
-void updateEntities(Entity *entities, bool *wallCollision, double *lastWallCollision, float wallCollisionDelay, int firstAlive) {
+void updateEntities(GameState *gameState) {
     bool changeDirection = false;
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-        if (!entities[i].alive) continue;
+        if (!gameState->entities[i].alive) continue;
         // Check if the hord needs to change direction
-        if (i == firstAlive && (*wallCollision)) {
+        if (i == gameState->firstAlive && gameState->canCollideOnWall) {
             int enemyCol = (i-2)%ENEMIES_PER_ROW;
-            int distLeft = entities[i].position.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
-            int distRight = entities[i].position.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
+            int distLeft = gameState->entities[i].position.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
+            int distRight = gameState->entities[i].position.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
             if (distLeft - LIMIT_LEFT <= 0 || LIMIT_RIGHT - distRight <= 0) {
                 changeDirection = true;
-                *wallCollision = false;
-                *lastWallCollision = GetTime();
+                gameState->canCollideOnWall = false;
+                gameState->timeLastWallCollision = GetTime();
             }
         }
 
         if (changeDirection && i < FIRST_IDX_BULLETS) {
-            entities[i].velocity.x *= -1;
-            entities[i].velocity.y += 30.0f;
+            gameState->entities[i].velocity.x *= -1;
+            gameState->entities[i].velocity.y += 30.0f;
         }
 
-        entities[i].position.x += entities[i].velocity.x;
-        entities[i].position.y += entities[i].velocity.y;
+        gameState->entities[i].position.x += gameState->entities[i].velocity.x;
+        gameState->entities[i].position.y += gameState->entities[i].velocity.y;
 
-        if (entities[i].type == SHIP) {
-            entities[i].velocity.x = 0.0f;
+        if (gameState->entities[i].type == SHIP) {
+            gameState->entities[i].velocity.x = 0.0f;
         }
 
-        if (entities[i].type != BULLET) {
-            entities[i].velocity.y = 0.0f;
+        if (gameState->entities[i].type != BULLET) {
+            gameState->entities[i].velocity.y = 0.0f;
             double currentTime = GetTime();
-            if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
-                entities[i].canShot = true;
+            if (currentTime - gameState->entities[i].lastShotTime > gameState->entities[i].delayToFire) {
+                gameState->entities[i].canShot = true;
             }
-        } else if (entities[i].position.y < 0.0f || entities[i].position.y > 1080.0f) {
-            entities[i].alive = false;
+        } else if (gameState->entities[i].position.y < 0.0f || gameState->entities[i].position.y > 1080.0f) {
+            gameState->entities[i].alive = false;
         }
         
-        if (GetTime()-(*lastWallCollision) > wallCollisionDelay) {
-            *wallCollision = true;
+        if (GetTime()-gameState->timeLastWallCollision > gameState->wallCollisionDelay) {
+            gameState->canCollideOnWall = true;
         }
     }
 }
 
+void processInput(GameState *gameState) {
+    if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)) {
+        gameState->exitWindowRequested = true;
+    }
+
+    if (gameState->exitWindowRequested) {
+        if (IsKeyPressed(KEY_Y)) gameState->exitWindow = true;
+        else if (IsKeyPressed(KEY_N)) gameState->exitWindowRequested = false;
+    }
+
+    if (IsKeyDown(KEY_LEFT)) gameState->entities[0].velocity.x = -10;
+    if (IsKeyDown(KEY_RIGHT)) gameState->entities[0].velocity.x = 10;
+    if (IsKeyDown(KEY_SPACE) && gameState->entities[0].canShot) shot(gameState->entities, 0);
+}
+
 int main(void) {
-    srand(time(NULL));
-    Color colors[] = {RAYWHITE, DARKPURPLE, DARKGREEN, YELLOW};
-    float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
-    Entity *entities = buildEntities(colors, delayToFire);
-    bool exitWindowRequested = false;
-    bool exitWindow = false;
+    GameState gameState = initGame();
 
-    bool wallCollision = true;
-    float wallCollisionDelay = 1.0f;
-    double lastWallColision = 0.0;
-    int firstAlive = 2;
-
-    InitWindow(
-        SCREEN_WIDTH,
-        SCREEN_HEIGHT,
-        "Space Invaders clone using raylib"
-    );
-    SetExitKey(KEY_NULL);
-    SetTargetFPS(60);
-    DisableCursor();
-
-    while (!exitWindow) {
-        if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE))
-            exitWindowRequested = true;
-        if (exitWindowRequested) {
-            if (IsKeyPressed(KEY_Y)) exitWindow = true;
-            else if (IsKeyPressed(KEY_N)) exitWindowRequested = false;
-        } else {
-            // Input processing
-            if (IsKeyDown(KEY_LEFT)) entities[0].velocity.x = -10;
-            if (IsKeyDown(KEY_RIGHT)) entities[0].velocity.x = 10;
-            if (IsKeyDown(KEY_SPACE) && entities[0].canShot) shot(entities, 0);
-
-            detectCollision(entities, &firstAlive);
-            updateEntities(entities, &wallCollision, &lastWallColision, wallCollisionDelay, firstAlive);
+    while (!gameState.exitWindow) {
+        processInput(&gameState);
+        if (!gameState.exitWindowRequested) {
+            detectCollision(&gameState);
+            updateEntities(&gameState);
         }
 
         // Without 'BeginDrawing()' and 'EndDrawing()' the mainloop doesn't work
         BeginDrawing();
-            ClearBackground(BLACK);
-            drawEntites(entities);
-
-            if (exitWindowRequested) drawExitMessage();
+            drawEntites(gameState.entities);
+            if (gameState.exitWindowRequested) drawExitMessage();
         EndDrawing();
     }
 
     CloseWindow();
-    free(entities);
+    free(gameState.entities);
 
     return 0;
 }
