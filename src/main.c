@@ -176,11 +176,9 @@ void drawGame(GameState *gameState) {
     DrawFPS(10, 10);
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         if (gameState->entities[i].alive)
-            DrawRectangle(
-                gameState->entities[i].position.x,
-                gameState->entities[i].position.y,
-                gameState->entities[i].dimensions.x,
-                gameState->entities[i].dimensions.y,
+            DrawRectangleV(
+                gameState->entities[i].position,
+                gameState->entities[i].dimensions,
                 gameState->entities[i].color
             );
     }
