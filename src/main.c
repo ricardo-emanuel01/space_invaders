@@ -154,21 +154,6 @@ GameState initGame() {
     return gameState;
 }
 
-void drawEntites(Entity *entities) {
-    ClearBackground(BLACK);
-    DrawFPS(10, 10);
-    for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-        if (entities[i].alive)
-            DrawRectangle(
-                entities[i].position.x,
-                entities[i].position.y,
-                entities[i].dimensions.x,
-                entities[i].dimensions.y,
-                entities[i].color
-            );
-    }
-}
-
 void drawExitMessage() {
     DrawRectangle(
         0,
@@ -184,6 +169,22 @@ void drawExitMessage() {
         EXIT_MESSAGE_FONT_SIZE,
         BLACK
     );
+}
+
+void drawGame(GameState *gameState) {
+    ClearBackground(BLACK);
+    DrawFPS(10, 10);
+    for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
+        if (gameState->entities[i].alive)
+            DrawRectangle(
+                gameState->entities[i].position.x,
+                gameState->entities[i].position.y,
+                gameState->entities[i].dimensions.x,
+                gameState->entities[i].dimensions.y,
+                gameState->entities[i].color
+            );
+    }
+    if (gameState->exitWindowRequested) drawExitMessage();
 }
 
 void debugEntities(Entity *entities) {
@@ -282,6 +283,10 @@ void detectCollision(GameState *gameState) {
 }
 
 void updateEntities(GameState *gameState) {
+    if (gameState->exitWindowRequested) return;
+
+    detectCollision(gameState);
+
     bool changeDirection = false;
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         if (!gameState->entities[i].alive) continue;
@@ -345,15 +350,11 @@ int main(void) {
 
     while (!gameState.exitWindow) {
         processInput(&gameState);
-        if (!gameState.exitWindowRequested) {
-            detectCollision(&gameState);
-            updateEntities(&gameState);
-        }
+        updateEntities(&gameState);
 
         // Without 'BeginDrawing()' and 'EndDrawing()' the mainloop doesn't work
         BeginDrawing();
-            drawEntites(gameState.entities);
-            if (gameState.exitWindowRequested) drawExitMessage();
+            drawGame(&gameState);
         EndDrawing();
     }
 
