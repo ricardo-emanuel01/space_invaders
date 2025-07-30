@@ -6,7 +6,7 @@
 
 # define SCREEN_WIDTH 1920
 # define SCREEN_HEIGHT 1080
-# define SHIP_WIDTH 150
+# define SHIP_WIDTH 100
 # define SHIP_HEIGHT 50
 # define SHIP_POS_Y 900
 # define ENEMY_SHIP_WIDTH SHIP_WIDTH
@@ -17,8 +17,8 @@
 # define ENEMIES_WIDTH 40
 # define ENEMIES_HEIGHT ENEMIES_WIDTH
 # define ENEMIES_OFFSET_Y (ENEMIES_WIDTH*3)
-# define N_ENEMIES_ROWS 6
-# define ENEMIES_PER_ROW 12
+# define N_ENEMIES_ROWS 4
+# define ENEMIES_PER_ROW 11
 # define N_ENEMIES (N_ENEMIES_ROWS*ENEMIES_PER_ROW)
 # define EXIT_BANNER_HEIGHT 200
 # define EXIT_MESSAGE_FONT_SIZE 75
@@ -28,6 +28,9 @@
 # define BULLET_HEIGHT 40
 # define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS)
 # define FIRST_IDX_BULLETS (2+N_ENEMIES)
+# define SCREEN_LIMIT 400
+# define LIMIT_LEFT SCREEN_LIMIT
+# define LIMIT_RIGHT (SCREEN_WIDTH-SCREEN_LIMIT)
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
@@ -79,7 +82,7 @@ Entity *buildEntities(Color colors[], float delayToFire[]) {
         entities[i+2].dimensions.y = ENEMIES_WIDTH;
         entities[i+2].position.x = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
         entities[i+2].position.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
-        entities[i+2].velocity.x = 0.0f;
+        entities[i+2].velocity.x = 2.0f;
         entities[i+2].velocity.y = 0.0f;
         entities[i+2].color = colors[entityType];
         entities[i+2].alive = true;
@@ -179,7 +182,7 @@ void shot(Entity *entities, int shooterIdx) {
 }
 
 // Implements a naive collision detection
-void detectCollision(Entity *entities) {
+void detectCollision(Entity *entities, int *firstAlive) {
     for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
         if (!entities[i].alive) continue;
 
@@ -227,27 +230,59 @@ void detectCollision(Entity *entities) {
             ) {
                 entities[i].alive = false;
                 entities[current_bullet].alive = false;
+
+                if (entities[i].type == ENEMY_SLOW || entities[i].type == ENEMY_FAST) {
+                    if (i == *firstAlive) {
+                        for (int j = i+1; j < FIRST_IDX_BULLETS && !entities[*firstAlive].alive; ++j) {
+                            if (entities[j].alive) *firstAlive = j;
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-void updateEntities(Entity *entities) {
+void updateEntities(Entity *entities, bool *wallCollision, double *lastWallCollision, float wallCollisionDelay, int firstAlive) {
+    bool changeDirection = false;
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-        if (entities[i].alive) {
-            entities[i].position.x += entities[i].velocity.x;
-            entities[i].position.y += entities[i].velocity.y;
-            if (entities[i].type == SHIP) {
-                entities[i].velocity.x = 0.0f;
-                entities[i].velocity.y = 0.0f;
+        if (!entities[i].alive) continue;
+        // Check if the hord needs to change direction
+        if (i == firstAlive && (*wallCollision)) {
+            int enemyCol = (i-2)%ENEMIES_PER_ROW;
+            int distLeft = entities[i].position.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
+            int distRight = entities[i].position.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
+            if (distLeft - LIMIT_LEFT <= 0 || LIMIT_RIGHT - distRight <= 0) {
+                changeDirection = true;
+                *wallCollision = false;
+                *lastWallCollision = GetTime();
             }
-            if (entities[i].type != BULLET) {
-                double currentTime = GetTime();
-                if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
-                    entities[i].canShot = true;
-                }
-            } else if (entities[i].position.y < 0.0f || entities[i].position.y > 1080.0f)
-                entities[i].alive = false;
+        }
+
+        if (changeDirection && i < FIRST_IDX_BULLETS) {
+            entities[i].velocity.x *= -1;
+            entities[i].velocity.y += 30.0f;
+        }
+
+        entities[i].position.x += entities[i].velocity.x;
+        entities[i].position.y += entities[i].velocity.y;
+
+        if (entities[i].type == SHIP) {
+            entities[i].velocity.x = 0.0f;
+        }
+
+        if (entities[i].type != BULLET) {
+            entities[i].velocity.y = 0.0f;
+            double currentTime = GetTime();
+            if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
+                entities[i].canShot = true;
+            }
+        } else if (entities[i].position.y < 0.0f || entities[i].position.y > 1080.0f) {
+            entities[i].alive = false;
+        }
+        
+        if (GetTime()-(*lastWallCollision) > wallCollisionDelay) {
+            *wallCollision = true;
         }
     }
 }
@@ -259,6 +294,11 @@ int main(void) {
     Entity *entities = buildEntities(colors, delayToFire);
     bool exitWindowRequested = false;
     bool exitWindow = false;
+
+    bool wallCollision = true;
+    float wallCollisionDelay = 1.0f;
+    double lastWallColision = 0.0;
+    int firstAlive = 2;
 
     InitWindow(
         SCREEN_WIDTH,
@@ -281,8 +321,8 @@ int main(void) {
             if (IsKeyDown(KEY_RIGHT)) entities[0].velocity.x = 10;
             if (IsKeyDown(KEY_SPACE) && entities[0].canShot) shot(entities, 0);
 
-            detectCollision(entities);
-            updateEntities(entities);
+            detectCollision(entities, &firstAlive);
+            updateEntities(entities, &wallCollision, &lastWallColision, wallCollisionDelay, firstAlive);
         }
 
         // Without 'BeginDrawing()' and 'EndDrawing()' the mainloop doesn't work
