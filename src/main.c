@@ -12,7 +12,7 @@
 # define ENEMY_SHIP_WIDTH SHIP_WIDTH
 # define ENEMY_SHIP_HEIGHT SHIP_HEIGHT
 # define ENEMY_SHIP_POS_Y 50
-# define ENEMIES_GAP_X 20
+# define ENEMIES_GAP_X 25
 # define ENEMIES_GAP_Y 15
 # define ENEMIES_WIDTH 40
 # define ENEMIES_HEIGHT ENEMIES_WIDTH
@@ -24,7 +24,7 @@
 # define EXIT_MESSAGE_FONT_SIZE 75
 # define BULLET_SPEED 20 // pixels/frame
 # define N_BULLETS 100
-# define BULLET_WIDTH 10
+# define BULLET_WIDTH 5
 # define BULLET_HEIGHT 40
 # define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS)
 # define FIRST_IDX_BULLETS (2+N_ENEMIES)
@@ -220,10 +220,10 @@ void detectCollision(Entity *entities) {
             };
 
             if (
-                (bulletUpperRight.x > upperLeft.x && bulletUpperRight.x < upperRight.x && bulletUpperRight.y > upperLeft.y && bulletUpperRight.y < lowerLeft.y) ||
-                (bulletUpperLeft.x > upperLeft.x && bulletUpperLeft.x < upperRight.x && bulletUpperLeft.y > upperLeft.y && bulletUpperLeft.y < lowerLeft.y) ||
-                (bulletLowerRight.x > lowerLeft.x && bulletLowerRight.x < lowerRight.x && bulletLowerRight.y > upperLeft.y && bulletLowerRight.y < lowerLeft.y) ||
-                (bulletLowerLeft.x > lowerLeft.x && bulletLowerLeft.x < lowerRight.x && bulletLowerLeft.y > upperLeft.y && bulletLowerLeft.y < lowerLeft.y)
+                (bulletUpperRight.x >= upperLeft.x && bulletUpperRight.x <= upperRight.x && bulletUpperRight.y >= upperLeft.y && bulletUpperRight.y <= lowerLeft.y) ||
+                (bulletUpperLeft.x >= upperLeft.x && bulletUpperLeft.x <= upperRight.x && bulletUpperLeft.y >= upperLeft.y && bulletUpperLeft.y <= lowerLeft.y) ||
+                (bulletLowerRight.x >= lowerLeft.x && bulletLowerRight.x <= lowerRight.x && bulletLowerRight.y >= upperLeft.y && bulletLowerRight.y <= lowerLeft.y) ||
+                (bulletLowerLeft.x >= lowerLeft.x && bulletLowerLeft.x <= lowerRight.x && bulletLowerLeft.y >= upperLeft.y && bulletLowerLeft.y <= lowerLeft.y)
             ) {
                 entities[i].alive = false;
                 entities[current_bullet].alive = false;
