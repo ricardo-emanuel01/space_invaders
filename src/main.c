@@ -23,7 +23,7 @@
 # define EXIT_BANNER_HEIGHT 200
 # define EXIT_MESSAGE_FONT_SIZE 75
 # define BULLET_SPEED 20 // pixels/frame
-# define N_BULLETS 100
+# define N_BULLETS 10000
 # define BULLET_WIDTH 5
 # define BULLET_HEIGHT 40
 # define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS)
@@ -46,7 +46,7 @@ typedef enum EntityType {
 
 typedef struct Entity {
     EntityType type;
-    Vector2 dimensions;
+    Vector2 size;
     Vector2 position;
     Vector2 velocity;
     Color color;
@@ -73,8 +73,8 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
     // Setup player ship
     entities[SHIP].type = entityType;
-    entities[SHIP].dimensions.x = SHIP_WIDTH;
-    entities[SHIP].dimensions.y = SHIP_HEIGHT;
+    entities[SHIP].size.x = SHIP_WIDTH;
+    entities[SHIP].size.y = SHIP_HEIGHT;
     entities[SHIP].position.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
     entities[SHIP].position.y = SHIP_POS_Y;
     entities[SHIP].velocity.x = 0.0f;
@@ -89,8 +89,8 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     for (int i = 0; i < N_ENEMIES; ++i) {
         if (i % (N_ENEMIES/2) == 0) entityType++;
         entities[i+2].type = entityType;
-        entities[i+2].dimensions.x = ENEMIES_WIDTH;
-        entities[i+2].dimensions.y = ENEMIES_WIDTH;
+        entities[i+2].size.x = ENEMIES_WIDTH;
+        entities[i+2].size.y = ENEMIES_WIDTH;
         entities[i+2].position.x = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
         entities[i+2].position.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
         entities[i+2].velocity.x = 2.0f;
@@ -104,8 +104,8 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
 
     // Setup Enemy ship
     entities[ENEMY_SHIP].type = ++entityType;
-    entities[ENEMY_SHIP].dimensions.x = ENEMY_SHIP_WIDTH;
-    entities[ENEMY_SHIP].dimensions.y = ENEMY_SHIP_HEIGHT;
+    entities[ENEMY_SHIP].size.x = ENEMY_SHIP_WIDTH;
+    entities[ENEMY_SHIP].size.y = ENEMY_SHIP_HEIGHT;
     entities[ENEMY_SHIP].position.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
     entities[ENEMY_SHIP].position.y = ENEMY_SHIP_POS_Y;
     entities[ENEMY_SHIP].velocity.x = 5.0f;
@@ -118,8 +118,8 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
 
     for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
         entities[i].type = entityType;
-        entities[i].dimensions.x = BULLET_WIDTH;
-        entities[i].dimensions.y = BULLET_HEIGHT;
+        entities[i].size.x = BULLET_WIDTH;
+        entities[i].size.y = BULLET_HEIGHT;
         entities[i].alive = false;
         entities[i].color = RAYWHITE;
     }
@@ -178,7 +178,7 @@ void drawGame(GameState *gameState) {
         if (gameState->entities[i].alive)
             DrawRectangleV(
                 gameState->entities[i].position,
-                gameState->entities[i].dimensions,
+                gameState->entities[i].size,
                 gameState->entities[i].color
             );
     }
@@ -189,36 +189,41 @@ void debugEntities(Entity *entities) {
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         printf("Entity at index: %d\n", i);
         printf("\tType: %d\n", entities[i].type);
-        printf("\tWidth: %lf\n", entities[i].dimensions.x);
-        printf("\tHeight: %lf\n", entities[i].dimensions.y);
+        printf("\tWidth: %lf\n", entities[i].size.x);
+        printf("\tHeight: %lf\n", entities[i].size.y);
         printf("\tposX: %lf\n", entities[i].position.x);
         printf("\tposY: %lf\n", entities[i].position.y);
         printf("\tDelay to shoot: %.2lf\n", entities[i].delayToFire);
     }
 }
 
-void shot(Entity *entities, int shooterIdx) {
+void shot(GameState *gameState, int shooterIdx) {
+    if (!gameState->entities[shooterIdx].canShot) return;
+
+    Entity *entities = gameState->entities;
     // There are a small number of bullets, so for now a linear search is ok
-    for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
-        if (!entities[i].alive) {
-            entities[shooterIdx].canShot = false;
-            entities[shooterIdx].lastShotTime = GetTime();
+    int firstBulletAvailable;
+    for (firstBulletAvailable = FIRST_IDX_BULLETS; firstBulletAvailable < ENTITIES_ARRAY_SIZE && entities[firstBulletAvailable].alive; ++firstBulletAvailable);
+    if (!entities[firstBulletAvailable].alive) {
+        entities[shooterIdx].canShot = false;
+        entities[shooterIdx].lastShotTime = GetTime();
 
-            entities[i].position.x = entities[shooterIdx].position.x + 0.5*entities[shooterIdx].dimensions.x;
-            entities[i].alive = true;
-            entities[i].shotSrc = entities[shooterIdx].type;
+        entities[firstBulletAvailable].position.x = entities[shooterIdx].position.x + 0.5*entities[shooterIdx].size.x;
+        entities[firstBulletAvailable].alive = true;
+        entities[firstBulletAvailable].shotSrc = entities[shooterIdx].type;
 
-            if (entities[shooterIdx].type == SHIP) {
-                entities[i].velocity.y = -BULLET_SPEED;
-                entities[i].position.y = entities[shooterIdx].position.y;
-            } else {
-                entities[i].velocity.y = BULLET_SPEED;
-                entities[i].position.y = entities[shooterIdx].position.y + entities[shooterIdx].dimensions.y;
-            }
-            break;
+        if (entities[shooterIdx].type == SHIP) {
+            entities[firstBulletAvailable].velocity.y = -BULLET_SPEED;
+            entities[firstBulletAvailable].position.y = entities[shooterIdx].position.y;
+        } else {
+            entities[firstBulletAvailable].velocity.y = BULLET_SPEED;
+            entities[firstBulletAvailable].position.y = entities[shooterIdx].position.y + entities[shooterIdx].size.y;
         }
+
+
     }
 }
+
 
 // Implements a naive collision detection
 void detectCollision(GameState *gameState) {
@@ -227,15 +232,15 @@ void detectCollision(GameState *gameState) {
 
         Vector2 upperLeft = gameState->entities[i].position;
         Vector2 upperRight = {
-            upperLeft.x + gameState->entities[i].dimensions.x,
+            upperLeft.x + gameState->entities[i].size.x,
             upperLeft.y
         };
         Vector2 lowerLeft = {
             upperLeft.x,
-            upperLeft.y + gameState->entities[i].dimensions.y
+            upperLeft.y + gameState->entities[i].size.y
         };
         Vector2 lowerRight = {
-            lowerLeft.x + gameState->entities[i].dimensions.x,
+            lowerLeft.x + gameState->entities[i].size.x,
             lowerLeft.y
         };
 
@@ -280,10 +285,17 @@ void detectCollision(GameState *gameState) {
     }
 }
 
+void enemyAI(GameState *gameState) {
+    int enemyIndex = rand() % (N_ENEMIES*30);
+    if (enemyIndex > ENEMY_SHIP && enemyIndex < FIRST_IDX_BULLETS)
+        shot(gameState, enemyIndex);
+}
+
 void updateEntities(GameState *gameState) {
     if (gameState->exitWindowRequested) return;
 
     detectCollision(gameState);
+    enemyAI(gameState);
 
     bool changeDirection = false;
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
@@ -340,7 +352,7 @@ void processInput(GameState *gameState) {
 
     if (IsKeyDown(KEY_LEFT)) gameState->entities[0].velocity.x = -10;
     if (IsKeyDown(KEY_RIGHT)) gameState->entities[0].velocity.x = 10;
-    if (IsKeyDown(KEY_SPACE) && gameState->entities[0].canShot) shot(gameState->entities, 0);
+    if (IsKeyDown(KEY_SPACE)) shot(gameState, SHIP);
 }
 
 int main(void) {
