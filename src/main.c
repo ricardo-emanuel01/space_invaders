@@ -46,12 +46,12 @@ typedef struct Entity {
     Vector2 velocity;
     Color color;
     bool alive;
-    float delayToShoot;
+    float delayToFire;
     bool canShot;
     double lastShotTime;
 } Entity;
 
-Entity *buildEntities(Color colors[], float delayToShoot[]) {
+Entity *buildEntities(Color colors[], float delayToFire[]) {
     EntityType entityType = SHIP;
 
     Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
@@ -65,7 +65,7 @@ Entity *buildEntities(Color colors[], float delayToShoot[]) {
     entities[0].velocity.y = 0.0f;
     entities[0].color = colors[0];
     entities[0].alive = true;
-    entities[0].delayToShoot = delayToShoot[entityType];
+    entities[0].delayToFire = delayToFire[entityType];
     entities[0].canShot = true;
     entities[0].lastShotTime = GetTime();
 
@@ -81,7 +81,7 @@ Entity *buildEntities(Color colors[], float delayToShoot[]) {
         entities[i+2].velocity.y = 0.0f;
         entities[i+2].color = colors[entityType];
         entities[i+2].alive = true;
-        entities[i+2].delayToShoot = delayToShoot[entityType];
+        entities[i+2].delayToFire = delayToFire[entityType];
         entities[i+2].canShot = true;
         entities[i+2].lastShotTime = GetTime();
     }
@@ -96,7 +96,7 @@ Entity *buildEntities(Color colors[], float delayToShoot[]) {
     entities[1].velocity.y = 0.0f;
     entities[1].color = colors[entityType];
     entities[1].alive = false;
-    entities[1].delayToShoot = delayToShoot[entityType++];
+    entities[1].delayToFire = delayToFire[entityType++];
     entities[1].canShot = true;
     entities[1].lastShotTime = GetTime();
 
@@ -149,7 +149,7 @@ void debugEntities(Entity *entities) {
         printf("\tHeight: %lf\n", entities[i].dimensions.y);
         printf("\tposX: %lf\n", entities[i].position.x);
         printf("\tposY: %lf\n", entities[i].position.y);
-        printf("\tDelay to shoot: %.2lf\n", entities[i].delayToShoot);
+        printf("\tDelay to shoot: %.2lf\n", entities[i].delayToFire);
     }
 }
 
@@ -164,7 +164,7 @@ void updateEntities(Entity *entities) {
             }
             if (entities[i].type != BULLET) {
                 double currentTime = GetTime();
-                if (currentTime - entities[i].lastShotTime > entities[i].delayToShoot) {
+                if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
                     entities[i].canShot = true;
                 }
             }
@@ -174,6 +174,7 @@ void updateEntities(Entity *entities) {
 }
 
 void shot(Entity *entities, int shooterIdx) {
+    // There are a small number of bullets, so for now a linear search is ok
     for (int i = N_ENEMIES + 2; i < ENTITIES_ARRAY_SIZE; ++i) {
         if (!entities[i].alive) {
             entities[shooterIdx].canShot = false;
@@ -197,7 +198,7 @@ void shot(Entity *entities, int shooterIdx) {
 int main(void) {
     srand(time(NULL));
     Color colors[] = {RAYWHITE, DARKPURPLE, DARKGREEN, YELLOW};
-    float delayToShoot[] = {0.5f, 3.0f, 1.0f, 0.1f};
+    float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
 
     InitWindow(
         SCREEN_WIDTH,
@@ -208,7 +209,7 @@ int main(void) {
     SetExitKey(KEY_NULL);
     SetTargetFPS(60);
     DisableCursor();
-    Entity *entities = buildEntities(colors, delayToShoot);
+    Entity *entities = buildEntities(colors, delayToFire);
     bool exitWindowRequested = false;
     bool exitWindow = false;
 
