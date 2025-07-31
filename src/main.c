@@ -83,7 +83,6 @@ typedef struct GameData {
     float wallCollisionDelay;
     float incrementPerLevel;
     int firstAlive;
-    int score;
     Entity *entities;
     GameState gameState;
     Music BGMusic;
@@ -117,6 +116,7 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[SHIP].delayToFire = delayToFire[SHIP];
     entities[SHIP].canFire = true;
     entities[SHIP].lastShotTime = GetTime();
+    entities[SHIP].points = 0;
 
     int enemiesXOffSet = (SCREEN_WIDTH - ENEMIES_PER_ROW*(ENEMIES_WIDTH + ENEMIES_GAP_X))/2;
     EntityType entityType = ENEMY_SHIP;
@@ -209,7 +209,6 @@ GameData initGame() {
         .firstAlive=2,
         .entities=buildEntities(colors, delayToFire),
         .gameState=PLAYING,
-        .score=0,
         .BGMusic=LoadMusicStream("resources/raining-bits.ogg"),
         .shipFire=LoadSound("resources/player-shoot.ogg"),
         .alienFire=LoadSound("resources/enemy-shoot.ogg"),
@@ -396,7 +395,7 @@ void detectCollisions(GameData *gameData) {
                 }
 
                 if (entities[i].type != SHIP) {
-                    gameData->score += entities[i].points;
+                    entities[i].points += entities[i].points;
                     PlaySound(gameData->alienExplosion);
                 } else {
                     gameData->gameState = LOSE;
