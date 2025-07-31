@@ -91,6 +91,7 @@ typedef struct GameData {
     Sound shipExplosion;
     Sound alienExplosion;
     Texture2D shipSingleShot;
+    Texture2D singleBullet;
     Texture2D enemyFast;
     Texture2D enemySlow;
 } GameData;
@@ -104,8 +105,8 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[SHIP].bounds.width = SHIP_WIDTH;
     entities[SHIP].bounds.height = SHIP_HEIGHT;
     entities[SHIP].animationFrame.nFrames = 2;
-    entities[SHIP].animationFrame.currentFrame = 0;
-    entities[SHIP].animationFrame.frameBounds.x = 0.0f;
+    entities[SHIP].animationFrame.currentFrame = 1;
+    entities[SHIP].animationFrame.frameBounds.x = 16.0f;
     entities[SHIP].animationFrame.frameBounds.y = 0.0f;
     entities[SHIP].animationFrame.frameBounds.width = 16.0f;
     entities[SHIP].animationFrame.frameBounds.height = 12.0f;
@@ -128,7 +129,7 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i+2].bounds.width = ENEMIES_WIDTH;
         entities[i+2].bounds.height = ENEMIES_HEIGHT;
         entities[i+2].animationFrame.nFrames = 4;
-        entities[i+2].animationFrame.currentFrame = 0;
+        entities[i+2].animationFrame.currentFrame = rand() % 4;
         entities[i+2].animationFrame.frameBounds.x = 0.0f;
         entities[i+2].animationFrame.frameBounds.y = 0.0f;
         entities[i+2].animationFrame.frameBounds.width = 16.0f;
@@ -197,7 +198,7 @@ GameData initGame() {
     );
     InitAudioDevice();
     SetExitKey(KEY_NULL);
-    SetTargetFPS(60);
+    SetTargetFPS(30);
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     DisableCursor();
     GameData gameData = {
@@ -209,11 +210,15 @@ GameData initGame() {
         .firstAlive=2,
         .entities=buildEntities(colors, delayToFire),
         .gameState=PLAYING,
-        .BGMusic=LoadMusicStream("resources/raining-bits.ogg"),
-        .shipFire=LoadSound("resources/player-shoot.ogg"),
-        .alienFire=LoadSound("resources/enemy-shoot.ogg"),
-        .shipExplosion=LoadSound("resources/player-explosion.ogg"),
-        .alienExplosion=LoadSound("resources/enemy-explosion.ogg"),
+        .BGMusic=LoadMusicStream("resources/BGMusic.ogg"),
+        .shipFire=LoadSound("resources/shipFire.ogg"),
+        .alienFire=LoadSound("resources/alienFire.ogg"),
+        .shipExplosion=LoadSound("resources/shipExplosion.ogg"),
+        .alienExplosion=LoadSound("resources/alienExplosion.ogg"),
+        .shipSingleShot=LoadTexture("resources/shipSingleShot.png"),
+        .enemySlow=LoadTexture("resources/enemySlow.png"),
+        .enemyFast=LoadTexture("resources/enemyFast.png"),
+        .singleBullet=LoadTexture("resources/singleBullet.png"),
     };
 
     gameData.BGMusic.looping = true;
@@ -229,6 +234,10 @@ void closeGame(GameData *gameData) {
     UnloadSound(gameData->shipExplosion);
     UnloadSound(gameData->alienFire);
     UnloadSound(gameData->alienExplosion);
+    UnloadTexture(gameData->shipSingleShot);
+    UnloadTexture(gameData->enemyFast);
+    UnloadTexture(gameData->enemySlow);
+    UnloadTexture(gameData->singleBullet);
     CloseAudioDevice();
     CloseWindow();
 
@@ -252,13 +261,45 @@ void drawExitMessage() {
     );
 }
 
-void drawEntities(Entity *entities) {
+void drawEntities(GameData *gameData) {
+    const Vector2 origin = {0.0f, 0.0f};
+    Entity *entities = gameData->entities;
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-        if (entities[i].alive)
-            DrawRectangleRec(
+        if (entities[i].alive) {
+            Texture2D currentTexture;
+            switch (entities[i].type) {
+                case SHIP:
+                {
+                    currentTexture = gameData->shipSingleShot;
+                } break;
+                case ENEMY_SLOW:
+                {
+                    currentTexture = gameData->enemySlow;
+                } break;
+                case ENEMY_FAST:
+                {
+                    currentTexture = gameData->enemyFast;
+                } break;
+                case BULLET:
+                {
+                    currentTexture = gameData->singleBullet;
+                } break;
+                default: break;
+            }
+
+            /*
+                When `origin` is not 0 the sprite is inserted with an offset,
+                that's why the bug on collision detection
+            */
+            DrawTexturePro(
+                currentTexture,
+                entities[i].animationFrame.frameBounds,
                 entities[i].bounds,
-                entities[i].color
+                origin,
+                0.0f,
+                WHITE
             );
+        }
     }
 }
 
@@ -273,11 +314,11 @@ void drawGame(GameData *gameData) {
         // } break;
         case PLAYING:
         {
-            drawEntities(gameData->entities);
+            drawEntities(gameData);
         } break;
         case PAUSED:
         {
-            drawEntities(gameData->entities);
+            drawEntities(gameData);
             drawExitMessage();
         } break;
         // case WIN:
@@ -291,7 +332,7 @@ void drawGame(GameData *gameData) {
         // While WIN and LOSE are not implemented
         default:
         {
-            drawEntities(gameData->entities);
+            drawEntities(gameData);
             drawExitMessage();
         } break;
     }
@@ -311,6 +352,7 @@ void debugEntities(Entity *entities) {
 
 void fire(GameData *gameData, int shooterIdx) {
     if (!gameData->entities[shooterIdx].canFire) return;
+    if (!gameData->entities[shooterIdx].alive) return;
 
     Entity *entities = gameData->entities;
     // There are a small number of bullets, so for now a linear search is ok
@@ -320,13 +362,13 @@ void fire(GameData *gameData, int shooterIdx) {
         entities[shooterIdx].canFire = false;
         entities[shooterIdx].lastShotTime = GetTime();
 
-        entities[firstBulletAvailable].bounds.x = entities[shooterIdx].bounds.x + 0.5*entities[shooterIdx].bounds.width;
+        entities[firstBulletAvailable].bounds.x = entities[shooterIdx].bounds.x + 0.5 * (entities[shooterIdx].bounds.width-BULLET_WIDTH);
         entities[firstBulletAvailable].alive = true;
         entities[firstBulletAvailable].shotSrc = entities[shooterIdx].type;
 
         if (entities[shooterIdx].type == SHIP) {
             entities[firstBulletAvailable].velocity.y = -BULLET_SPEED;
-            entities[firstBulletAvailable].bounds.y = entities[shooterIdx].bounds.y;
+            entities[firstBulletAvailable].bounds.y = entities[shooterIdx].bounds.y - BULLET_HEIGHT;
             PlaySound(gameData->shipFire);
         } else {
             entities[firstBulletAvailable].velocity.y = BULLET_SPEED;
@@ -407,7 +449,7 @@ void detectCollisions(GameData *gameData) {
 }
 
 void enemyAI(GameData *gameData) {
-    int enemyIndex = rand() % (N_ENEMIES*30);
+    int enemyIndex = rand() % (N_ENEMIES*20);
     if (enemyIndex > ENEMY_SHIP && enemyIndex < FIRST_IDX_BULLETS)
         fire(gameData, enemyIndex);
 }
@@ -433,6 +475,9 @@ void updateGame(GameData *gameData) {
                 entities[SHIP].velocity.x = 0.0f;
                 entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
             }
+        } else if (entities[i].type != BULLET) {
+            entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
+            entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
         }
         // Check if the horde needs to change direction
         if (i == gameData->firstAlive && gameData->canCollideOnWall) {
