@@ -6,15 +6,16 @@
 
 # define SCREEN_WIDTH 1920
 # define SCREEN_HEIGHT 1080
-# define SHIP_WIDTH 100
-# define SHIP_HEIGHT 50
+# define SHIP_WIDTH 96
+# define SHIP_HEIGHT 72
 # define SHIP_POS_Y 900
 # define ENEMY_SHIP_WIDTH SHIP_WIDTH
 # define ENEMY_SHIP_HEIGHT SHIP_HEIGHT
 # define ENEMY_SHIP_POS_Y 50
 # define ENEMIES_GAP_X 25
 # define ENEMIES_GAP_Y 15
-# define ENEMIES_WIDTH 40
+# define ENEMIES_WIDTH 32
+# define ENEMIES_HEIGHT ENEMIES_WIDTH
 # define ENEMIES_HEIGHT ENEMIES_WIDTH
 # define ENEMIES_OFFSET_Y (ENEMIES_WIDTH*3)
 # define N_ENEMIES_ROWS 4
@@ -24,8 +25,8 @@
 # define EXIT_MESSAGE_FONT_SIZE 75
 # define BULLET_SPEED 20 // pixels/frame
 # define N_BULLETS 10000
-# define BULLET_WIDTH 5
-# define BULLET_HEIGHT 40
+# define BULLET_WIDTH 4
+# define BULLET_HEIGHT 32
 # define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS)
 # define FIRST_IDX_BULLETS (2+N_ENEMIES)
 # define SCREEN_LIMIT 250
@@ -55,10 +56,16 @@ typedef enum EntityType {
     BULLET,
 } EntityType;
 
+typedef struct AnimationFrame {
+    int nFrames;
+    int currentFrame;
+    Rectangle frameBounds;
+} AnimationFrame;
+
 typedef struct Entity {
     EntityType type;
-    Vector2 size;
-    Vector2 position;
+    Rectangle bounds;
+    AnimationFrame animationFrame;
     Vector2 velocity;
     Color color;
     bool alive;
@@ -84,16 +91,25 @@ typedef struct GameData {
     Sound alienFire;
     Sound shipExplosion;
     Sound alienExplosion;
+    Texture2D shipSingleShot;
+    Texture2D enemyFast;
+    Texture2D enemySlow;
 } GameData;
 
 Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
     // Setup player ship
     entities[SHIP].type = SHIP;
-    entities[SHIP].size.x = SHIP_WIDTH;
-    entities[SHIP].size.y = SHIP_HEIGHT;
-    entities[SHIP].position.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
-    entities[SHIP].position.y = SHIP_POS_Y;
+    entities[SHIP].bounds.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
+    entities[SHIP].bounds.y = SHIP_POS_Y;
+    entities[SHIP].bounds.width = SHIP_WIDTH;
+    entities[SHIP].bounds.height = SHIP_HEIGHT;
+    entities[SHIP].animationFrame.nFrames = 2;
+    entities[SHIP].animationFrame.currentFrame = 0;
+    entities[SHIP].animationFrame.frameBounds.x = 0.0f;
+    entities[SHIP].animationFrame.frameBounds.y = 0.0f;
+    entities[SHIP].animationFrame.frameBounds.width = 16.0f;
+    entities[SHIP].animationFrame.frameBounds.height = 12.0f;
     entities[SHIP].velocity.x = 0.0f;
     entities[SHIP].velocity.y = 0.0f;
     entities[SHIP].color = colors[0];
@@ -107,10 +123,16 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     for (int i = 0; i < N_ENEMIES; ++i) {
         if (i % (N_ENEMIES/2) == 0) entityType++;
         entities[i+2].type = entityType;
-        entities[i+2].size.x = ENEMIES_WIDTH;
-        entities[i+2].size.y = ENEMIES_WIDTH;
-        entities[i+2].position.x = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
-        entities[i+2].position.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
+        entities[i+2].bounds.x = enemiesXOffSet + (ENEMIES_WIDTH + ENEMIES_GAP_X)*(i%ENEMIES_PER_ROW);
+        entities[i+2].bounds.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
+        entities[i+2].bounds.width = ENEMIES_WIDTH;
+        entities[i+2].bounds.height = ENEMIES_HEIGHT;
+        entities[i+2].animationFrame.nFrames = 4;
+        entities[i+2].animationFrame.currentFrame = 0;
+        entities[i+2].animationFrame.frameBounds.x = 0.0f;
+        entities[i+2].animationFrame.frameBounds.y = 0.0f;
+        entities[i+2].animationFrame.frameBounds.width = 16.0f;
+        entities[i+2].animationFrame.frameBounds.height = 16.0f;
         entities[i+2].velocity.x = 2.0f;
         entities[i+2].velocity.y = 0.0f;
         entities[i+2].color = colors[entityType];
@@ -127,10 +149,16 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
 
     // Setup Enemy ship
     entities[ENEMY_SHIP].type = ENEMY_SHIP;
-    entities[ENEMY_SHIP].size.x = ENEMY_SHIP_WIDTH;
-    entities[ENEMY_SHIP].size.y = ENEMY_SHIP_HEIGHT;
-    entities[ENEMY_SHIP].position.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
-    entities[ENEMY_SHIP].position.y = ENEMY_SHIP_POS_Y;
+    entities[ENEMY_SHIP].bounds.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
+    entities[ENEMY_SHIP].bounds.y = ENEMY_SHIP_POS_Y;
+    entities[ENEMY_SHIP].bounds.width = ENEMY_SHIP_WIDTH;
+    entities[ENEMY_SHIP].bounds.height = ENEMY_SHIP_HEIGHT;
+    entities[ENEMY_SHIP].animationFrame.nFrames = 2;
+    entities[ENEMY_SHIP].animationFrame.currentFrame = 0;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.x = 0.0f;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.y = 0.0f;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.width = 16.0f;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.height = 16.0f;
     entities[ENEMY_SHIP].velocity.x = 5.0f;
     entities[ENEMY_SHIP].velocity.y = 0.0f;
     entities[ENEMY_SHIP].color = colors[ENEMY_SHIP];
@@ -142,8 +170,14 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
 
     for (int i = FIRST_IDX_BULLETS; i < ENTITIES_ARRAY_SIZE; ++i) {
         entities[i].type = BULLET;
-        entities[i].size.x = BULLET_WIDTH;
-        entities[i].size.y = BULLET_HEIGHT;
+        entities[i].bounds.width = BULLET_WIDTH;
+        entities[i].bounds.height = BULLET_HEIGHT;
+        entities[i].animationFrame.nFrames = 1;
+        entities[i].animationFrame.currentFrame = 0;
+        entities[i].animationFrame.frameBounds.x = 0.0f;
+        entities[i].animationFrame.frameBounds.y = 0.0f;
+        entities[i].animationFrame.frameBounds.width = 2.0f;
+        entities[i].animationFrame.frameBounds.height = 8.0f;
         entities[i].alive = false;
         entities[i].color = RAYWHITE;
     }
@@ -222,9 +256,8 @@ void drawExitMessage() {
 void drawEntities(Entity *entities) {
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         if (entities[i].alive)
-            DrawRectangleV(
-                entities[i].position,
-                entities[i].size,
+            DrawRectangleRec(
+                entities[i].bounds,
                 entities[i].color
             );
     }
@@ -269,10 +302,10 @@ void debugEntities(Entity *entities) {
     for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
         printf("Entity at index: %d\n", i);
         printf("\tType: %d\n", entities[i].type);
-        printf("\tWidth: %lf\n", entities[i].size.x);
-        printf("\tHeight: %lf\n", entities[i].size.y);
-        printf("\tposX: %lf\n", entities[i].position.x);
-        printf("\tposY: %lf\n", entities[i].position.y);
+        printf("\tWidth: %lf\n", entities[i].bounds.width);
+        printf("\tHeight: %lf\n", entities[i].bounds.height);
+        printf("\tposX: %lf\n", entities[i].bounds.x);
+        printf("\tposY: %lf\n", entities[i].bounds.y);
         printf("\tDelay to shoot: %.2lf\n", entities[i].delayToFire);
     }
 }
@@ -288,17 +321,17 @@ void fire(GameData *gameData, int shooterIdx) {
         entities[shooterIdx].canFire = false;
         entities[shooterIdx].lastShotTime = GetTime();
 
-        entities[firstBulletAvailable].position.x = entities[shooterIdx].position.x + 0.5*entities[shooterIdx].size.x;
+        entities[firstBulletAvailable].bounds.x = entities[shooterIdx].bounds.x + 0.5*entities[shooterIdx].bounds.width;
         entities[firstBulletAvailable].alive = true;
         entities[firstBulletAvailable].shotSrc = entities[shooterIdx].type;
 
         if (entities[shooterIdx].type == SHIP) {
             entities[firstBulletAvailable].velocity.y = -BULLET_SPEED;
-            entities[firstBulletAvailable].position.y = entities[shooterIdx].position.y;
+            entities[firstBulletAvailable].bounds.y = entities[shooterIdx].bounds.y;
             PlaySound(gameData->shipFire);
         } else {
             entities[firstBulletAvailable].velocity.y = BULLET_SPEED;
-            entities[firstBulletAvailable].position.y = entities[shooterIdx].position.y + entities[shooterIdx].size.y;
+            entities[firstBulletAvailable].bounds.y = entities[shooterIdx].bounds.y + entities[shooterIdx].bounds.height;
             PlaySound(gameData->alienFire);
         }
     }
@@ -311,17 +344,17 @@ void detectCollisions(GameData *gameData) {
     for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
         if (!entities[i].alive) continue;
 
-        Vector2 upperLeft = entities[i].position;
+        Vector2 upperLeft = {entities[i].bounds.x, entities[i].bounds.y};
         Vector2 upperRight = {
-            upperLeft.x + entities[i].size.x,
+            upperLeft.x + entities[i].bounds.width,
             upperLeft.y
         };
         Vector2 lowerLeft = {
             upperLeft.x,
-            upperLeft.y + entities[i].size.y
+            upperLeft.y + entities[i].bounds.height
         };
         Vector2 lowerRight = {
-            lowerLeft.x + entities[i].size.x,
+            lowerLeft.x + entities[i].bounds.width,
             lowerLeft.y
         };
 
@@ -333,7 +366,7 @@ void detectCollisions(GameData *gameData) {
                 (entities[current_bullet].shotSrc >= ENEMY_SHIP && entities[current_bullet].shotSrc <= ENEMY_FAST)
             ) continue;
 
-            Vector2 bulletUpperLeft = entities[current_bullet].position;
+            Vector2 bulletUpperLeft = {entities[current_bullet].bounds.x, entities[current_bullet].bounds.y};
             Vector2 bulletUpperRight = {
                 bulletUpperLeft.x + BULLET_WIDTH,
                 bulletUpperLeft.y
@@ -392,21 +425,21 @@ void updateGame(GameData *gameData) {
         Entity *entities = gameData->entities;
         if (!entities[i].alive) continue;
         if (i == SHIP) {
-            float nextShipPositionX = entities[SHIP].position.x + entities[SHIP].velocity.x;
+            float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
             // If the next update was going to put player ship beyond limit put it on the limit and put 0 on velocity.x
             if (nextShipPositionX + SHIP_WIDTH > SCREEN_LIMIT_RIGHT) {
                 entities[SHIP].velocity.x = 0.0f;
-                entities[SHIP].position.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
+                entities[SHIP].bounds.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
             } else if (nextShipPositionX < SCREEN_LIMIT_LEFT) {
                 entities[SHIP].velocity.x = 0.0f;
-                entities[SHIP].position.x = SCREEN_LIMIT_LEFT;
+                entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
             }
         }
         // Check if the horde needs to change direction
         if (i == gameData->firstAlive && gameData->canCollideOnWall) {
             int enemyCol = (i-2)%ENEMIES_PER_ROW;
-            int distLeft = entities[i].position.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
-            int distRight = entities[i].position.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
+            int distLeft = entities[i].bounds.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
+            int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
             if (distLeft - HORDE_LIMIT_LEFT <= 0 || HORDE_LIMIT_RIGHT - distRight <= 0) {
                 changeDirection = true;
                 gameData->incrementPerLevel *= -1;
@@ -422,8 +455,8 @@ void updateGame(GameData *gameData) {
             entities[i].velocity.y += 40.0f;
         }
 
-        entities[i].position.x += entities[i].velocity.x;
-        entities[i].position.y += entities[i].velocity.y;
+        entities[i].bounds.x += entities[i].velocity.x;
+        entities[i].bounds.y += entities[i].velocity.y;
 
         if (entities[i].type == SHIP) {
             entities[i].velocity.x = 0.0f;
@@ -435,7 +468,7 @@ void updateGame(GameData *gameData) {
             if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
                 entities[i].canFire = true;
             }
-        } else if (entities[i].position.y < 0.0f || entities[i].position.y > 1080.0f) {
+        } else if (entities[i].bounds.y < 0.0f || entities[i].bounds.y > 1080.0f) {
             entities[i].alive = false;
         }
         
