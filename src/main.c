@@ -83,6 +83,7 @@
 # define PATH_SHIP_FIRE_FX "resources/sounds/shipFireFX.ogg"
 # define PATH_POWER_UP_FX "resources/sounds/powerUpFX.ogg"
 # define PATH_VICTORY_FX "resources/sounds/victoryFX.ogg"
+# define PATH_LOSE_FX "resources/sounds/loseFX.ogg"
 # define PATH_SHIP_TEX "resources/textures/shipTex.png"
 # define PATH_ENEMY_SLOW_TEX "resources/textures/enemySlowTex.png"
 # define PATH_ENEMY_FAST_TEX "resources/textures/enemyFastTex.png"
@@ -150,6 +151,7 @@ typedef struct GameData {
     float wallCollisionDelay;
     float incrementPerLevel;
     int firstAlive;
+    int lastAlive;
     Entity *entities;
     GameState gameState;
     MenuItem menuItem;
@@ -160,6 +162,7 @@ typedef struct GameData {
     Sound alienExplosion;
     Sound powerUp;
     Sound victory;
+    Sound lose;
     Texture2D shipSingleShot;
     Texture2D singleBullet;
     Texture2D enemyFast;
@@ -310,6 +313,7 @@ GameData initGame() {
         .wallCollisionDelay=WALL_COLISION_DELAY,
         .incrementPerLevel=INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
         .firstAlive=2,
+        .lastAlive=FIRST_IDX_BULLETS-1,
         .entities=buildEntities(),
         .gameState=MENU,
         .menuItem=START,
@@ -320,6 +324,7 @@ GameData initGame() {
         .alienExplosion=LoadSound(PATH_ALIEN_EXPLOSION_FX),
         .powerUp=LoadSound(PATH_POWER_UP_FX),
         .victory=LoadSound(PATH_VICTORY_FX),
+        .lose=LoadSound(PATH_LOSE_FX),
         .shipSingleShot=LoadTexture(PATH_SHIP_TEX),
         .enemySlow=LoadTexture(PATH_ENEMY_SLOW_TEX),
         .enemyFast=LoadTexture(PATH_ENEMY_FAST_TEX),
@@ -350,9 +355,12 @@ void rebootGame(GameData *gameData) {
     gameData->wallCollisionDelay = WALL_COLISION_DELAY,
     gameData->incrementPerLevel = INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
     gameData->firstAlive = 2,
+    gameData->lastAlive = FIRST_IDX_BULLETS - 1;
     gameData->gameState = PLAYING;
     gameData->menuItem = START;
     gameData->activePowerUp = false;
+    StopSound(gameData->lose);
+    StopSound(gameData->victory);
     PlayMusicStream(gameData->BGMusic);
 }
 
@@ -364,6 +372,7 @@ void closeGame(GameData *gameData) {
     UnloadSound(gameData->alienExplosion);
     UnloadSound(gameData->powerUp);
     UnloadSound(gameData->victory);
+    UnloadSound(gameData->lose);
     UnloadTexture(gameData->shipSingleShot);
     UnloadTexture(gameData->enemyFast);
     UnloadTexture(gameData->enemySlow);
@@ -501,6 +510,17 @@ void drawVictory() {
     );
 }
 
+void drawLose() {
+    int loseMessage = MeasureText("DEFEATED", 150);
+    DrawText(
+        "DEFEATED",
+        (SCREEN_WIDTH-loseMessage)/2,
+        100,
+        150,
+        RAYWHITE
+    );
+}
+
 void drawGame(GameData *gameData) {
     ClearBackground(BLACK);
     DrawFPS(10, 10);
@@ -517,12 +537,15 @@ void drawGame(GameData *gameData) {
         } break;
         case WIN:
         {
+            drawEntities(gameData);
+            drawMenu(gameData);
             drawVictory();
-        }
+        } break;
         case LOSE:
         {
             drawEntities(gameData);
             drawMenu(gameData);
+            drawLose();
         } break;
         // While WIN and LOSE are not implemented
         default:
@@ -577,17 +600,43 @@ void generatePowerUp(GameData *gameData, int srcIndex) {
     }
 }
 
+bool detectCollision(
+    Entity *entities, int firstEntityIdx, int secondEntityIdx
+) {
+    float leftEdgeEntity = entities[firstEntityIdx].bounds.x;
+    float rightEdgeEntity = leftEdgeEntity + entities[firstEntityIdx].bounds.width;
+    float topEdgeEntity = entities[firstEntityIdx].bounds.y;
+    float bottomEdgeEntity = topEdgeEntity + entities[firstEntityIdx].bounds.height;
+
+    float leftEdgeCollider = entities[secondEntityIdx].bounds.x;
+    float topEdgeCollider = entities[secondEntityIdx].bounds.y;
+    float rightEdgeCollider = leftEdgeCollider + entities[secondEntityIdx].bounds.width;
+    float bottomEdgeCollider = topEdgeCollider + entities[secondEntityIdx].bounds.height;
+
+    if (
+        (rightEdgeEntity >= leftEdgeCollider) &&
+        (leftEdgeEntity <= rightEdgeCollider) &&
+        (bottomEdgeEntity >= topEdgeCollider) &&
+        (topEdgeEntity <= bottomEdgeCollider)
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
 // Implements a naive collision detection
 void detectCollisions(GameData *gameData) {
     Entity *entities = gameData->entities;
+    if (detectCollision(entities, SHIP, gameData->lastAlive)) {
+        gameData->gameState = LOSE;
+        gameData->menuItem = RESTART;
+        StopMusicStream(gameData->BGMusic);
+        PlaySound(gameData->lose);
+        return;
+    }
     for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
         if (!entities[i].alive) continue;
-
-        float leftEdgeEntity = entities[i].bounds.x;
-        float rightEdgeEntity = leftEdgeEntity + entities[i].bounds.width;
-        float topEdgeEntity = entities[i].bounds.y;
-        float bottomEdgeEntity = topEdgeEntity + entities[i].bounds.height;
-
         for (int current_collider = FIRST_IDX_BULLETS; current_collider < ENTITIES_ARRAY_SIZE; ++current_collider) {
             if (!entities[current_collider].alive) continue;
             if (entities[current_collider].shotSrc == entities[i].type) continue;
@@ -596,17 +645,7 @@ void detectCollisions(GameData *gameData) {
                 (entities[current_collider].shotSrc >= ENEMY_SHIP && entities[current_collider].shotSrc <= ENEMY_FAST)
             ) continue;
 
-            float leftEdgeCollider = entities[current_collider].bounds.x;
-            float topEdgeCollider = entities[current_collider].bounds.y;
-            float rightEdgeCollider = leftEdgeCollider + entities[current_collider].bounds.width;
-            float bottomEdgeCollider = topEdgeCollider + entities[current_collider].bounds.height;
-
-            if (
-                (rightEdgeEntity >= leftEdgeCollider) &&
-                (leftEdgeEntity <= rightEdgeCollider) &&
-                (bottomEdgeEntity >= topEdgeCollider) &&
-                (topEdgeEntity <= bottomEdgeCollider)
-            ) {
+            if (detectCollision(entities, i, current_collider)) {
                 entities[i].alive = false;
                 entities[current_collider].alive = false;
 
@@ -619,6 +658,10 @@ void detectCollisions(GameData *gameData) {
                         gameData->menuItem = RESTART;
                         StopMusicStream(gameData->BGMusic);
                         PlaySound(gameData->victory);
+                    }
+                } else if (i == gameData->lastAlive) {
+                    for (int j = i-1; j >= gameData->firstAlive && !entities[gameData->lastAlive].alive; --j) {
+                        if (entities[j].alive) gameData->lastAlive = j;
                     }
                 }
 
@@ -640,7 +683,9 @@ void detectCollisions(GameData *gameData) {
                         {
                             gameData->gameState = LOSE;
                             gameData->menuItem = RESTART;
+                            StopMusicStream(gameData->BGMusic);
                             PlaySound(gameData->shipExplosion);
+                            PlaySound(gameData->lose);
                         } break;
                         default: break;
                     }
