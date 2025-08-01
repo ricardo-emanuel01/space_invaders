@@ -22,7 +22,11 @@
 # define ENEMIES_PER_ROW 11
 # define N_ENEMIES (N_ENEMIES_ROWS*ENEMIES_PER_ROW)
 # define EXIT_BANNER_HEIGHT 200
-# define EXIT_MESSAGE_FONT_SIZE 75
+# define EXIT_MESSAGE_FONT_SIZE 80
+# define MENU_BANNER_WIDTH 600
+# define MENU_BANNER_HEIGHT 400
+# define MENU_BANNER_POS_X ((SCREEN_WIDTH-MENU_BANNER_WIDTH)/2)
+# define MENU_BANNER_POS_Y ((SCREEN_HEIGHT-MENU_BANNER_HEIGHT)/2)
 # define BULLET_SPEED 20 // pixels/frame
 # define N_BULLETS 10000
 # define BULLET_WIDTH 4
@@ -36,6 +40,23 @@
 # define HORDE_LIMIT_LEFT HORDE_SCREEN_LIMIT
 # define HORDE_LIMIT_RIGHT (SCREEN_WIDTH-HORDE_SCREEN_LIMIT)
 # define WALL_COLISION_DELAY 1.0f
+# define SHIP_TEXTURE_WIDTH 16.0f
+# define SHIP_TEXTURE_HEIGHT 12.0f
+# define N_SHIP_FRAMES 2
+# define ENEMY_SLOW_TEXTURE_WIDTH 16.0f
+# define ENEMY_SLOW_TEXTURE_HEIGHT ENEMY_SLOW_TEXTURE_WIDTH
+# define N_ENEMY_SLOW_FRAMES 4
+# define ENEMY_FAST_TEXTURE_WIDTH ENEMY_SLOW_TEXTURE_WIDTH
+# define ENEMY_FAST_TEXTURE_HEIGHT ENEMY_SLOW_TEXTURE_WIDTH
+# define N_ENEMY_FAST_FRAMES 4
+# define ENEMY_SHIP_TEXTURE_WIDTH ENEMY_SLOW_TEXTURE_WIDTH
+# define ENEMY_SHIP_TEXTURE_HEIGHT ENEMY_SLOW_TEXTURE_WIDTH
+# define N_ENEMY_SHIP_FRAMES 2
+# define BULLET_TEXTURE_WIDTH 4.0f
+# define BULLET_TEXTURE_HEIGHT 8.0f
+# define N_BULLET_FRAMES 1
+# define REGULAR_BUTTON_SIZE 80
+# define SELECT_BUTTON_SIZE_INCREMENT 20
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
@@ -45,8 +66,13 @@ typedef enum GameState {
     PLAYING,
     WIN,
     LOSE,
-    PAUSED,
 } GameState;
+
+typedef enum MenuItem {
+    RESTART,
+    START,
+    QUIT,
+} MenuItem;
 
 typedef enum EntityType {
     SHIP,
@@ -85,6 +111,7 @@ typedef struct GameData {
     int firstAlive;
     Entity *entities;
     GameState gameState;
+    MenuItem menuItem;
     Music BGMusic;
     Sound shipFire;
     Sound alienFire;
@@ -94,6 +121,9 @@ typedef struct GameData {
     Texture2D singleBullet;
     Texture2D enemyFast;
     Texture2D enemySlow;
+    int startButtonSize;
+    int quitButtonSize;
+    int restartButtonSize;
 } GameData;
 
 Entity *buildEntities(const Color colors[], const float delayToFire[]) {
@@ -104,12 +134,12 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[SHIP].bounds.y = SHIP_POS_Y;
     entities[SHIP].bounds.width = SHIP_WIDTH;
     entities[SHIP].bounds.height = SHIP_HEIGHT;
-    entities[SHIP].animationFrame.nFrames = 2;
+    entities[SHIP].animationFrame.nFrames = N_SHIP_FRAMES;
     entities[SHIP].animationFrame.currentFrame = 1;
-    entities[SHIP].animationFrame.frameBounds.x = 16.0f;
+    entities[SHIP].animationFrame.frameBounds.x = SHIP_TEXTURE_WIDTH;
     entities[SHIP].animationFrame.frameBounds.y = 0.0f;
-    entities[SHIP].animationFrame.frameBounds.width = 16.0f;
-    entities[SHIP].animationFrame.frameBounds.height = 12.0f;
+    entities[SHIP].animationFrame.frameBounds.width = SHIP_TEXTURE_WIDTH;
+    entities[SHIP].animationFrame.frameBounds.height = SHIP_TEXTURE_HEIGHT;
     entities[SHIP].velocity.x = 0.0f;
     entities[SHIP].velocity.y = 0.0f;
     entities[SHIP].color = colors[0];
@@ -128,12 +158,12 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i+2].bounds.y = ENEMIES_OFFSET_Y + (ENEMIES_WIDTH + ENEMIES_GAP_Y)*(i/ENEMIES_PER_ROW);
         entities[i+2].bounds.width = ENEMIES_WIDTH;
         entities[i+2].bounds.height = ENEMIES_HEIGHT;
-        entities[i+2].animationFrame.nFrames = 4;
-        entities[i+2].animationFrame.currentFrame = rand() % 4;
+        entities[i+2].animationFrame.nFrames = N_ENEMY_SLOW_FRAMES;
+        entities[i+2].animationFrame.currentFrame = rand() % N_ENEMY_SLOW_FRAMES;
         entities[i+2].animationFrame.frameBounds.x = 0.0f;
         entities[i+2].animationFrame.frameBounds.y = 0.0f;
-        entities[i+2].animationFrame.frameBounds.width = 16.0f;
-        entities[i+2].animationFrame.frameBounds.height = 16.0f;
+        entities[i+2].animationFrame.frameBounds.width = ENEMY_SLOW_TEXTURE_WIDTH;
+        entities[i+2].animationFrame.frameBounds.height = ENEMY_SLOW_TEXTURE_HEIGHT;
         entities[i+2].velocity.x = 2.0f;
         entities[i+2].velocity.y = 0.0f;
         entities[i+2].color = colors[entityType];
@@ -154,12 +184,12 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[ENEMY_SHIP].bounds.y = ENEMY_SHIP_POS_Y;
     entities[ENEMY_SHIP].bounds.width = ENEMY_SHIP_WIDTH;
     entities[ENEMY_SHIP].bounds.height = ENEMY_SHIP_HEIGHT;
-    entities[ENEMY_SHIP].animationFrame.nFrames = 2;
+    entities[ENEMY_SHIP].animationFrame.nFrames = N_ENEMY_SHIP_FRAMES;
     entities[ENEMY_SHIP].animationFrame.currentFrame = 0;
     entities[ENEMY_SHIP].animationFrame.frameBounds.x = 0.0f;
     entities[ENEMY_SHIP].animationFrame.frameBounds.y = 0.0f;
-    entities[ENEMY_SHIP].animationFrame.frameBounds.width = 16.0f;
-    entities[ENEMY_SHIP].animationFrame.frameBounds.height = 16.0f;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.width = ENEMY_SHIP_TEXTURE_WIDTH;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.height = ENEMY_SHIP_TEXTURE_HEIGHT;
     entities[ENEMY_SHIP].velocity.x = 5.0f;
     entities[ENEMY_SHIP].velocity.y = 0.0f;
     entities[ENEMY_SHIP].color = colors[ENEMY_SHIP];
@@ -173,12 +203,12 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i].type = BULLET;
         entities[i].bounds.width = BULLET_WIDTH;
         entities[i].bounds.height = BULLET_HEIGHT;
-        entities[i].animationFrame.nFrames = 1;
+        entities[i].animationFrame.nFrames = N_BULLET_FRAMES;
         entities[i].animationFrame.currentFrame = 0;
         entities[i].animationFrame.frameBounds.x = 0.0f;
         entities[i].animationFrame.frameBounds.y = 0.0f;
-        entities[i].animationFrame.frameBounds.width = 2.0f;
-        entities[i].animationFrame.frameBounds.height = 8.0f;
+        entities[i].animationFrame.frameBounds.width = BULLET_TEXTURE_WIDTH;
+        entities[i].animationFrame.frameBounds.height = BULLET_TEXTURE_HEIGHT;
         entities[i].alive = false;
         entities[i].color = RAYWHITE;
     }
@@ -209,7 +239,8 @@ GameData initGame() {
         .incrementPerLevel=0.5f,
         .firstAlive=2,
         .entities=buildEntities(colors, delayToFire),
-        .gameState=PLAYING,
+        .gameState=MENU,
+        .menuItem=START,
         .BGMusic=LoadMusicStream("resources/BGMusic.ogg"),
         .shipFire=LoadSound("resources/shipFire.ogg"),
         .alienFire=LoadSound("resources/alienFire.ogg"),
@@ -219,6 +250,9 @@ GameData initGame() {
         .enemySlow=LoadTexture("resources/enemySlow.png"),
         .enemyFast=LoadTexture("resources/enemyFast.png"),
         .singleBullet=LoadTexture("resources/singleBullet.png"),
+        .startButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
+        .quitButtonSize=REGULAR_BUTTON_SIZE,
+        .restartButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
     };
 
     gameData.BGMusic.looping = true;
@@ -226,6 +260,21 @@ GameData initGame() {
     PlayMusicStream(gameData.BGMusic);
 
     return gameData;
+}
+
+void rebootGame(GameData *gameData) {
+    const Color colors[] = {RAYWHITE, YELLOW, DARKPURPLE, DARKGREEN};
+    const float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
+    free(gameData->entities);
+    gameData->entities = buildEntities(colors, delayToFire);
+    gameData->exitWindow = false,
+    gameData->canCollideOnWall = true,
+    gameData->timeLastWallCollision = GetTime(),
+    gameData->wallCollisionDelay = WALL_COLISION_DELAY,
+    gameData->incrementPerLevel = 0.5f,
+    gameData->firstAlive = 2,
+    gameData->gameState = PLAYING;
+    gameData->menuItem = START;
 }
 
 void closeGame(GameData *gameData) {
@@ -259,6 +308,58 @@ void drawExitMessage() {
         EXIT_MESSAGE_FONT_SIZE,
         BLACK
     );
+}
+
+void drawMenu(GameData *gameData) {
+    Rectangle banner = {
+        .x=MENU_BANNER_POS_X,
+        .y=MENU_BANNER_POS_Y,
+        .width=MENU_BANNER_WIDTH,
+        .height=MENU_BANNER_HEIGHT,
+    };
+
+    switch (gameData->gameState) {
+        case LOSE:
+        {
+            int restartButtonSize = MeasureText("RESTART", gameData->restartButtonSize);
+            int quitButtonSize = MeasureText("QUIT", gameData->quitButtonSize);
+            DrawRectangleRec(banner, RAYWHITE);
+            DrawText(
+                "RESTART",
+                (SCREEN_WIDTH-restartButtonSize)/2,
+                SCREEN_HEIGHT/2 - 100,
+                gameData->restartButtonSize,
+                BLACK
+            );
+            DrawText(
+                "QUIT",
+                (SCREEN_WIDTH-quitButtonSize)/2,
+                SCREEN_HEIGHT/2,
+                gameData->quitButtonSize,
+                BLACK
+            );
+        } break;
+        default:
+        {
+            int startButtonSize = MeasureText("START", gameData->startButtonSize);
+            int quitButtonSize = MeasureText("QUIT", gameData->quitButtonSize);
+            DrawRectangleRec(banner, RAYWHITE);
+            DrawText(
+                "START",
+                (SCREEN_WIDTH-startButtonSize)/2,
+                SCREEN_HEIGHT/2 - 100,
+                gameData->startButtonSize,
+                BLACK
+            );
+            DrawText(
+                "QUIT",
+                (SCREEN_WIDTH-quitButtonSize)/2,
+                SCREEN_HEIGHT/2,
+                gameData->quitButtonSize,
+                BLACK
+            );
+        } break;
+    }
 }
 
 void drawEntities(GameData *gameData) {
@@ -308,27 +409,24 @@ void drawGame(GameData *gameData) {
     DrawFPS(10, 10);
 
     switch (gameData->gameState) {
-        // case MENU:
-        // {
-
-        // } break;
+        case MENU:
+        {
+            drawEntities(gameData);
+            drawMenu(gameData);
+        } break;
         case PLAYING:
         {
             drawEntities(gameData);
-        } break;
-        case PAUSED:
-        {
-            drawEntities(gameData);
-            drawExitMessage();
         } break;
         // case WIN:
         // {
 
         // } break;
-        // case LOSE:
-        // {
-
-        // } break;
+        case LOSE:
+        {
+            drawEntities(gameData);
+            drawMenu(gameData);
+        } break;
         // While WIN and LOSE are not implemented
         default:
         {
@@ -441,6 +539,7 @@ void detectCollisions(GameData *gameData) {
                     PlaySound(gameData->alienExplosion);
                 } else {
                     gameData->gameState = LOSE;
+                    gameData->menuItem = RESTART;
                     PlaySound(gameData->shipExplosion);
                 } 
             }
@@ -449,112 +548,171 @@ void detectCollisions(GameData *gameData) {
 }
 
 void enemyAI(GameData *gameData) {
-    int enemyIndex = rand() % (N_ENEMIES*20);
+    int enemyIndex = rand() % (N_ENEMIES*15);
     if (enemyIndex > ENEMY_SHIP && enemyIndex < FIRST_IDX_BULLETS)
         fire(gameData, enemyIndex);
 }
 
 void updateGame(GameData *gameData) {
     UpdateMusicStream(gameData->BGMusic);
-    if (gameData->gameState != PLAYING) return;
+    switch (gameData->gameState) {
+        case MENU:
+        {
+            
+        } break;
+        case PLAYING:
+        {
+            detectCollisions(gameData);
+            enemyAI(gameData);
 
-    detectCollisions(gameData);
-    enemyAI(gameData);
+            bool changeDirection = false;
+            for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
+                Entity *entities = gameData->entities;
+                if (!entities[i].alive) continue;
+                if (i == SHIP) {
+                    float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
+                    // If the next update was going to put player ship beyond limit put it on the limit and put 0 on velocity.x
+                    if (nextShipPositionX + SHIP_WIDTH > SCREEN_LIMIT_RIGHT) {
+                        entities[SHIP].velocity.x = 0.0f;
+                        entities[SHIP].bounds.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
+                    } else if (nextShipPositionX < SCREEN_LIMIT_LEFT) {
+                        entities[SHIP].velocity.x = 0.0f;
+                        entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
+                    }
+                } else if (entities[i].type != BULLET) {
+                    entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
+                    entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
+                }
+                // Check if the horde needs to change direction
+                if (i == gameData->firstAlive && gameData->canCollideOnWall) {
+                    int enemyCol = (i-2)%ENEMIES_PER_ROW;
+                    int distLeft = entities[i].bounds.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
+                    int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
+                    if (distLeft - HORDE_LIMIT_LEFT <= 0 || HORDE_LIMIT_RIGHT - distRight <= 0) {
+                        changeDirection = true;
+                        gameData->incrementPerLevel *= -1;
+                        gameData->canCollideOnWall = false;
+                        gameData->timeLastWallCollision = GetTime();
+                    }
+                }
 
-    bool changeDirection = false;
-    for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-        Entity *entities = gameData->entities;
-        if (!entities[i].alive) continue;
-        if (i == SHIP) {
-            float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
-            // If the next update was going to put player ship beyond limit put it on the limit and put 0 on velocity.x
-            if (nextShipPositionX + SHIP_WIDTH > SCREEN_LIMIT_RIGHT) {
-                entities[SHIP].velocity.x = 0.0f;
-                entities[SHIP].bounds.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
-            } else if (nextShipPositionX < SCREEN_LIMIT_LEFT) {
-                entities[SHIP].velocity.x = 0.0f;
-                entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
+                if (changeDirection && i < FIRST_IDX_BULLETS) {
+                    entities[i].velocity.x *= -1;
+
+                    entities[i].velocity.x += gameData->incrementPerLevel;
+                    entities[i].velocity.y += 40.0f;
+                }
+
+                entities[i].bounds.x += entities[i].velocity.x;
+                entities[i].bounds.y += entities[i].velocity.y;
+
+                if (entities[i].type == SHIP) {
+                    entities[i].velocity.x = 0.0f;
+                }
+
+                if (entities[i].type != BULLET) {
+                    entities[i].velocity.y = 0.0f;
+                    double currentTime = GetTime();
+                    if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
+                        entities[i].canFire = true;
+                    }
+                } else if (entities[i].bounds.y < 0.0f || entities[i].bounds.y > 1080.0f) {
+                    entities[i].alive = false;
+                }
+                
+                if (GetTime()-gameData->timeLastWallCollision > gameData->wallCollisionDelay) {
+                    gameData->canCollideOnWall = true;
+                }
             }
-        } else if (entities[i].type != BULLET) {
-            entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
-            entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
-        }
-        // Check if the horde needs to change direction
-        if (i == gameData->firstAlive && gameData->canCollideOnWall) {
-            int enemyCol = (i-2)%ENEMIES_PER_ROW;
-            int distLeft = entities[i].bounds.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
-            int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
-            if (distLeft - HORDE_LIMIT_LEFT <= 0 || HORDE_LIMIT_RIGHT - distRight <= 0) {
-                changeDirection = true;
-                gameData->incrementPerLevel *= -1;
-                gameData->canCollideOnWall = false;
-                gameData->timeLastWallCollision = GetTime();
-            }
-        }
-
-        if (changeDirection && i < FIRST_IDX_BULLETS) {
-            entities[i].velocity.x *= -1;
-
-            entities[i].velocity.x += gameData->incrementPerLevel;
-            entities[i].velocity.y += 40.0f;
-        }
-
-        entities[i].bounds.x += entities[i].velocity.x;
-        entities[i].bounds.y += entities[i].velocity.y;
-
-        if (entities[i].type == SHIP) {
-            entities[i].velocity.x = 0.0f;
-        }
-
-        if (entities[i].type != BULLET) {
-            entities[i].velocity.y = 0.0f;
-            double currentTime = GetTime();
-            if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
-                entities[i].canFire = true;
-            }
-        } else if (entities[i].bounds.y < 0.0f || entities[i].bounds.y > 1080.0f) {
-            entities[i].alive = false;
-        }
-        
-        if (GetTime()-gameData->timeLastWallCollision > gameData->wallCollisionDelay) {
-            gameData->canCollideOnWall = true;
-        }
+        } break;
     }
+    if (gameData->gameState != PLAYING) return;
 }
 
 void processInput(GameData *gameData) {
     switch (gameData->gameState) {
-        // case MENU:
-        // {
+        case MENU:
+        {
+            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
+                if (gameData->menuItem == START) {
+                    gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->startButtonSize < 80) gameData->startButtonSize = 80;
+                    if (gameData->quitButtonSize > 100) gameData->quitButtonSize = 100;
+                    gameData->menuItem = QUIT;
+                } else {
+                    gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->startButtonSize > 100) gameData->startButtonSize = 100;
+                    if (gameData->quitButtonSize < 80) gameData->quitButtonSize = 80;
+                    gameData->menuItem = START;
+                }
+            }
 
-        // } break;
+            if (IsKeyPressed(KEY_SPACE)) {
+                if (gameData->menuItem == START) {
+                    gameData->gameState = PLAYING;
+                } else gameData->exitWindow = true;
+            }
+        } break;
         case PLAYING:
         {
             if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)) {
-                gameData->gameState = PAUSED;
+                gameData->gameState = MENU;
             }
             if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -10;
             if (IsKeyDown(KEY_RIGHT)) gameData->entities[0].velocity.x = 10;
-            if (IsKeyDown(KEY_SPACE)) fire(gameData, SHIP);
-        } break;
-        case PAUSED:
-        {
-            if (IsKeyPressed(KEY_Y)) gameData->exitWindow = true;
-            else if (IsKeyPressed(KEY_N)) gameData->gameState = PLAYING;
+            if (IsKeyPressed(KEY_SPACE)) fire(gameData, SHIP);
         } break;
         // case WIN:
         // {
 
         // } break;
-        // case LOSE:
-        // {
+        case LOSE:
+        {
+            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
+                if (gameData->menuItem == RESTART) {
+                    gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->restartButtonSize < 80) gameData->restartButtonSize = 80;
+                    if (gameData->quitButtonSize > 100) gameData->quitButtonSize = 100;
+                    gameData->menuItem = QUIT;
+                } else {
+                    gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->restartButtonSize > 100) gameData->restartButtonSize = 100;
+                    if (gameData->quitButtonSize < 80) gameData->quitButtonSize = 80;
+                    gameData->menuItem = RESTART;
+                }
+            }
 
-        // } break;
+            if (IsKeyPressed(KEY_SPACE)) {
+                if (gameData->menuItem == RESTART) {
+                    gameData->gameState = PLAYING;
+                    rebootGame(gameData);
+                } else gameData->exitWindow = true;
+            }
+        } break;
         // While WIN and LOSE are not implmemented
         default:
         {
-            if (IsKeyPressed(KEY_Y)) gameData->exitWindow = true;
-            else if (IsKeyPressed(KEY_N)) gameData->gameState = PLAYING;
+            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
+                if (gameData->menuItem == START) {
+                    gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->menuItem = QUIT;
+                } else {
+                    gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->menuItem = START;
+                }
+            }
+
+            if (IsKeyDown(KEY_ENTER)) {
+                if (gameData->menuItem == START) {
+                    gameData->gameState = PLAYING;
+                } else gameData->exitWindow = true;
+            }
         } break;
     }
 }
