@@ -69,11 +69,22 @@
 # define ENEMY_SLOW_POINTS 350
 # define ENEMY_FAST_POINTS 500
 # define ENEMY_INITIAL_VELOCITY_X 2.0f
-# define ENEMY_VELOCITY_X_PER_LEVEL 0.5f
+# define INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL 0.5f
 # define SLOW_ENEMY_DELAY_TO_FIRE 1.0f
 # define FAST_ENEMY_DELAY_TO_FIRE 0.5f
 # define SHIP_REGULAR_DELAY_TO_FIRE 0.5f
 # define SHIP_BUFFED_DELAY_TO_FIRE 0.1f
+# define PATH_BG_MUSIC "resources/sounds/BGMusic.ogg"
+# define PATH_ALIEN_EXPLOSION_FX "resources/sounds/alienExplosionFX.ogg"
+# define PATH_SHIP_EXPLOSION_FX "resources/sounds/shipExplosionFX.ogg"
+# define PATH_ALIEN_FIRE_FX "resources/sounds/alienFireFX.ogg"
+# define PATH_SHIP_FIRE_FX "resources/sounds/shipFireFX.ogg"
+# define PATH_POWER_UP_FX "resources/sounds/powerUpFX.ogg"
+# define PATH_SHIP_TEX "resources/textures/shipTex.png"
+# define PATH_ENEMY_SLOW_TEX "resources/textures/enemySlowTex.png"
+# define PATH_ENEMY_FAST_TEX "resources/textures/enemyFastTex.png"
+# define PATH_SINGLE_BULLET_TEX "resources/textures/singleBulletTex.png"
+# define PATH_FAST_SHOT_POWER_UP_TEX "resources/textures/fastShotPowerUpTex.png"
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
@@ -293,22 +304,22 @@ GameData initGame() {
         .canCollideOnWall=true,
         .timeLastWallCollision=0.0,
         .wallCollisionDelay=WALL_COLISION_DELAY,
-        .incrementPerLevel=0.5f,
+        .incrementPerLevel=INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
         .firstAlive=2,
         .entities=buildEntities(),
         .gameState=MENU,
         .menuItem=START,
-        .BGMusic=LoadMusicStream("resources/BGMusic.ogg"),
-        .shipFire=LoadSound("resources/shipFire.ogg"),
-        .alienFire=LoadSound("resources/alienFire.ogg"),
-        .shipExplosion=LoadSound("resources/shipExplosion.ogg"),
-        .alienExplosion=LoadSound("resources/alienExplosion.ogg"),
-        .powerUp=LoadSound("resources/powerUp.ogg"),
-        .shipSingleShot=LoadTexture("resources/ship.png"),
-        .enemySlow=LoadTexture("resources/enemySlow.png"),
-        .enemyFast=LoadTexture("resources/enemyFast.png"),
-        .singleBullet=LoadTexture("resources/singleBullet.png"),
-        .fastShotPowerUp=LoadTexture("resources/fastShotPowerUp.png"),
+        .BGMusic=LoadMusicStream(PATH_BG_MUSIC),
+        .shipFire=LoadSound(PATH_SHIP_FIRE_FX),
+        .alienFire=LoadSound(PATH_ALIEN_FIRE_FX),
+        .shipExplosion=LoadSound(PATH_SHIP_EXPLOSION_FX),
+        .alienExplosion=LoadSound(PATH_ALIEN_EXPLOSION_FX),
+        .powerUp=LoadSound(PATH_POWER_UP_FX),
+        .shipSingleShot=LoadTexture(PATH_SHIP_TEX),
+        .enemySlow=LoadTexture(PATH_ENEMY_SLOW_TEX),
+        .enemyFast=LoadTexture(PATH_ENEMY_FAST_TEX),
+        .singleBullet=LoadTexture(PATH_SINGLE_BULLET_TEX),
+        .fastShotPowerUp=LoadTexture(PATH_FAST_SHOT_POWER_UP_TEX),
         .startButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
         .quitButtonSize=REGULAR_BUTTON_SIZE,
         .restartButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
@@ -332,7 +343,7 @@ void rebootGame(GameData *gameData) {
     gameData->canCollideOnWall = true,
     gameData->timeLastWallCollision = GetTime(),
     gameData->wallCollisionDelay = WALL_COLISION_DELAY,
-    gameData->incrementPerLevel = 0.5f,
+    gameData->incrementPerLevel = INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
     gameData->firstAlive = 2,
     gameData->gameState = PLAYING;
     gameData->menuItem = START;
@@ -527,7 +538,7 @@ void fire(GameData *gameData, int shooterIdx) {
         entities[shooterIdx].canFire = false;
         entities[shooterIdx].lastShotTime = GetTime();
 
-        entities[firstBulletAvailable].bounds.x = entities[shooterIdx].bounds.x + 0.5 * (entities[shooterIdx].bounds.width-BULLET_WIDTH);
+        entities[firstBulletAvailable].bounds.x = entities[shooterIdx].bounds.x + (entities[shooterIdx].bounds.width-BULLET_WIDTH)/2;
         entities[firstBulletAvailable].alive = true;
         entities[firstBulletAvailable].shotSrc = entities[shooterIdx].type;
 
