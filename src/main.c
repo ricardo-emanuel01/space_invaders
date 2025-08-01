@@ -74,12 +74,15 @@
 # define FAST_ENEMY_DELAY_TO_FIRE 0.5f
 # define SHIP_REGULAR_DELAY_TO_FIRE 0.5f
 # define SHIP_BUFFED_DELAY_TO_FIRE 0.1f
+# define HORDE_STEP_Y_AXIS 50.0f
+# define SHIP_X_MOVEMENT 10.0f
 # define PATH_BG_MUSIC "resources/sounds/BGMusic.ogg"
 # define PATH_ALIEN_EXPLOSION_FX "resources/sounds/alienExplosionFX.ogg"
 # define PATH_SHIP_EXPLOSION_FX "resources/sounds/shipExplosionFX.ogg"
 # define PATH_ALIEN_FIRE_FX "resources/sounds/alienFireFX.ogg"
 # define PATH_SHIP_FIRE_FX "resources/sounds/shipFireFX.ogg"
 # define PATH_POWER_UP_FX "resources/sounds/powerUpFX.ogg"
+# define PATH_VICTORY_FX "resources/sounds/victoryFX.ogg"
 # define PATH_SHIP_TEX "resources/textures/shipTex.png"
 # define PATH_ENEMY_SLOW_TEX "resources/textures/enemySlowTex.png"
 # define PATH_ENEMY_FAST_TEX "resources/textures/enemyFastTex.png"
@@ -156,6 +159,7 @@ typedef struct GameData {
     Sound shipExplosion;
     Sound alienExplosion;
     Sound powerUp;
+    Sound victory;
     Texture2D shipSingleShot;
     Texture2D singleBullet;
     Texture2D enemyFast;
@@ -315,6 +319,7 @@ GameData initGame() {
         .shipExplosion=LoadSound(PATH_SHIP_EXPLOSION_FX),
         .alienExplosion=LoadSound(PATH_ALIEN_EXPLOSION_FX),
         .powerUp=LoadSound(PATH_POWER_UP_FX),
+        .victory=LoadSound(PATH_VICTORY_FX),
         .shipSingleShot=LoadTexture(PATH_SHIP_TEX),
         .enemySlow=LoadTexture(PATH_ENEMY_SLOW_TEX),
         .enemyFast=LoadTexture(PATH_ENEMY_FAST_TEX),
@@ -348,6 +353,7 @@ void rebootGame(GameData *gameData) {
     gameData->gameState = PLAYING;
     gameData->menuItem = START;
     gameData->activePowerUp = false;
+    PlayMusicStream(gameData->BGMusic);
 }
 
 void closeGame(GameData *gameData) {
@@ -357,6 +363,7 @@ void closeGame(GameData *gameData) {
     UnloadSound(gameData->alienFire);
     UnloadSound(gameData->alienExplosion);
     UnloadSound(gameData->powerUp);
+    UnloadSound(gameData->victory);
     UnloadTexture(gameData->shipSingleShot);
     UnloadTexture(gameData->enemyFast);
     UnloadTexture(gameData->enemySlow);
@@ -394,6 +401,7 @@ void drawMenu(GameData *gameData) {
     };
 
     switch (gameData->gameState) {
+        case WIN:
         case LOSE:
         {
             int restartButtonSize = MeasureText("RESTART", gameData->restartButtonSize);
@@ -482,6 +490,17 @@ void drawEntities(GameData *gameData) {
     }
 }
 
+void drawVictory() {
+    int victoryMessage = MeasureText("VICTORY", 150);
+    DrawText(
+        "VICTORY",
+        (SCREEN_WIDTH-victoryMessage)/2,
+        100,
+        150,
+        RAYWHITE
+    );
+}
+
 void drawGame(GameData *gameData) {
     ClearBackground(BLACK);
     DrawFPS(10, 10);
@@ -496,10 +515,10 @@ void drawGame(GameData *gameData) {
         {
             drawEntities(gameData);
         } break;
-        // case WIN:
-        // {
-
-        // } break;
+        case WIN:
+        {
+            drawVictory();
+        }
         case LOSE:
         {
             drawEntities(gameData);
@@ -511,18 +530,6 @@ void drawGame(GameData *gameData) {
             drawEntities(gameData);
             drawExitMessage();
         } break;
-    }
-}
-
-void debugEntities(Entity *entities) {
-    for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-        printf("Entity at index: %d\n", i);
-        printf("\tType: %d\n", entities[i].type);
-        printf("\tWidth: %lf\n", entities[i].bounds.width);
-        printf("\tHeight: %lf\n", entities[i].bounds.height);
-        printf("\tposX: %lf\n", entities[i].bounds.x);
-        printf("\tposY: %lf\n", entities[i].bounds.y);
-        printf("\tDelay to shoot: %.2lf\n", entities[i].delayToFire);
     }
 }
 
@@ -607,6 +614,12 @@ void detectCollisions(GameData *gameData) {
                     for (int j = i+1; j < FIRST_IDX_BULLETS && !entities[gameData->firstAlive].alive; ++j) {
                         if (entities[j].alive) gameData->firstAlive = j;
                     }
+                    if (!entities[gameData->firstAlive].alive) {
+                        gameData->gameState = WIN;
+                        gameData->menuItem = RESTART;
+                        StopMusicStream(gameData->BGMusic);
+                        PlaySound(gameData->victory);
+                    }
                 }
 
                 if (entities[i].type != SHIP) {
@@ -646,10 +659,6 @@ void enemyAI(GameData *gameData) {
 void updateGame(GameData *gameData) {
     UpdateMusicStream(gameData->BGMusic);
     switch (gameData->gameState) {
-        case MENU:
-        {
-
-        } break;
         case PLAYING:
         {
             detectCollisions(gameData);
@@ -690,7 +699,7 @@ void updateGame(GameData *gameData) {
                     entities[i].velocity.x *= -1;
 
                     entities[i].velocity.x += gameData->incrementPerLevel;
-                    entities[i].velocity.y += 50.0f;
+                    entities[i].velocity.y += HORDE_STEP_Y_AXIS;
                 }
 
                 entities[i].bounds.x += entities[i].velocity.x;
@@ -706,7 +715,7 @@ void updateGame(GameData *gameData) {
                     if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
                         entities[i].canFire = true;
                     }
-                } else if (entities[i].bounds.y < 0.0f || entities[i].bounds.y > 1080.0f) {
+                } else if (entities[i].bounds.y < 0.0f || entities[i].bounds.y > SCREEN_HEIGHT) {
                     entities[i].alive = false;
                 }
                 
@@ -715,10 +724,11 @@ void updateGame(GameData *gameData) {
                 }
                 if (GetTime()-gameData->powerUpTimeOut > 0.0) {
                     gameData->activePowerUp = false;
-                    entities[SHIP].delayToFire = 0.5f;
+                    entities[SHIP].delayToFire = SHIP_REGULAR_DELAY_TO_FIRE;
                 }
             }
         } break;
+        default: break;
     }
 }
 
@@ -730,14 +740,20 @@ void processInput(GameData *gameData) {
                 if (gameData->menuItem == START) {
                     gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
                     gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->startButtonSize < 80) gameData->startButtonSize = 80;
-                    if (gameData->quitButtonSize > 100) gameData->quitButtonSize = 100;
+                    if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->startButtonSize = REGULAR_BUTTON_SIZE;
+                    if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+
                     gameData->menuItem = QUIT;
                 } else {
                     gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
                     gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->startButtonSize > 100) gameData->startButtonSize = 100;
-                    if (gameData->quitButtonSize < 80) gameData->quitButtonSize = 80;
+                    if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+
                     gameData->menuItem = START;
                 }
             }
@@ -759,14 +775,11 @@ void processInput(GameData *gameData) {
                 }
                 gameData->gameState = MENU;
             }
-            if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -10;
-            if (IsKeyDown(KEY_RIGHT)) gameData->entities[0].velocity.x = 10;
+            if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
+            if (IsKeyDown(KEY_RIGHT)) gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
             if (IsKeyPressed(KEY_SPACE)) fire(gameData, SHIP);
         } break;
-        // case WIN:
-        // {
-
-        // } break;
+        case WIN:
         case LOSE:
         {
             if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
