@@ -66,9 +66,23 @@
 # define POWER_UP_TEXTURE_HEIGHT POWER_UP_TEXTURE_WIDTH
 # define N_POWER_FRAMES 1
 # define POWER_UP_DURATION 2.0
+# define ENEMY_SLOW_POINTS 350
+# define ENEMY_FAST_POINTS 500
+# define ENEMY_INITIAL_VELOCITY_X 2.0f
+# define ENEMY_VELOCITY_X_PER_LEVEL 0.5f
+# define SLOW_ENEMY_DELAY_TO_FIRE 1.0f
+# define FAST_ENEMY_DELAY_TO_FIRE 0.5f
+# define SHIP_REGULAR_DELAY_TO_FIRE 0.5f
+# define SHIP_BUFFED_DELAY_TO_FIRE 0.1f
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
+const float delayToFire[] = {
+    SHIP_REGULAR_DELAY_TO_FIRE,
+    SLOW_ENEMY_DELAY_TO_FIRE,
+    FAST_ENEMY_DELAY_TO_FIRE,
+    SHIP_BUFFED_DELAY_TO_FIRE
+};
 
 typedef enum GameState {
     MENU,
@@ -142,9 +156,7 @@ typedef struct GameData {
     bool activePowerUp;
 } GameData;
 
-Entity *buildEntities(const Color colors[], const float delayToFire[]) {
-    Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
-    // Setup player ship
+void initShip(Entity *entities) {
     entities[SHIP].type = SHIP;
     entities[SHIP].bounds.x = (SCREEN_WIDTH - SHIP_WIDTH)/2;
     entities[SHIP].bounds.y = SHIP_POS_Y;
@@ -158,13 +170,15 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[SHIP].animationFrame.frameBounds.height = SHIP_TEXTURE_HEIGHT;
     entities[SHIP].velocity.x = 0.0f;
     entities[SHIP].velocity.y = 0.0f;
-    entities[SHIP].color = colors[0];
+    entities[SHIP].color = WHITE;
     entities[SHIP].alive = true;
     entities[SHIP].delayToFire = delayToFire[SHIP];
     entities[SHIP].canFire = true;
     entities[SHIP].lastShotTime = GetTime();
     entities[SHIP].points = 0;
+}
 
+void initHorde(Entity *entities) {
     int enemiesXOffSet = (SCREEN_WIDTH - ENEMIES_PER_ROW*(ENEMIES_WIDTH + ENEMIES_GAP_X))/2;
     EntityType entityType = ENEMY_SHIP;
     for (int i = 0; i < N_ENEMIES; ++i) {
@@ -180,21 +194,22 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i+2].animationFrame.frameBounds.y = 0.0f;
         entities[i+2].animationFrame.frameBounds.width = ENEMY_SLOW_TEXTURE_WIDTH;
         entities[i+2].animationFrame.frameBounds.height = ENEMY_SLOW_TEXTURE_HEIGHT;
-        entities[i+2].velocity.x = 2.0f;
+        entities[i+2].velocity.x = ENEMY_INITIAL_VELOCITY_X;
         entities[i+2].velocity.y = 0.0f;
-        entities[i+2].color = colors[entityType];
+        entities[i+2].color = WHITE;
         entities[i+2].alive = true;
         entities[i+2].delayToFire = delayToFire[entityType];
         entities[i+2].canFire = true;
         entities[i+2].lastShotTime = GetTime();
         if (entityType == ENEMY_FAST) {
-            entities[i+2].points = 500;
+            entities[i+2].points = ENEMY_FAST_POINTS;
         } else if (entityType == ENEMY_SLOW) {
-            entities[i+2].points = 350;
+            entities[i+2].points = ENEMY_SLOW_POINTS;
         }
     }
+}
 
-    // Setup Enemy ship
+void initEnemyShip(Entity *entities) {
     entities[ENEMY_SHIP].type = ENEMY_SHIP;
     entities[ENEMY_SHIP].bounds.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
     entities[ENEMY_SHIP].bounds.y = ENEMY_SHIP_POS_Y;
@@ -208,13 +223,15 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[ENEMY_SHIP].animationFrame.frameBounds.height = ENEMY_SHIP_TEXTURE_HEIGHT;
     entities[ENEMY_SHIP].velocity.x = 5.0f;
     entities[ENEMY_SHIP].velocity.y = 0.0f;
-    entities[ENEMY_SHIP].color = colors[ENEMY_SHIP];
+    entities[ENEMY_SHIP].color = WHITE;
     entities[ENEMY_SHIP].alive = false;
     entities[ENEMY_SHIP].delayToFire = delayToFire[ENEMY_SHIP];
     entities[ENEMY_SHIP].canFire = true;
     entities[ENEMY_SHIP].lastShotTime = GetTime();
     entities[ENEMY_SHIP].points = 5000;
+}
 
+void initBullets(Entity *entities) {
     for (int i = FIRST_IDX_BULLETS; i < FIRST_IDX_POWER_UPS; ++i) {
         entities[i].type = BULLET;
         entities[i].bounds.width = BULLET_WIDTH;
@@ -228,13 +245,15 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i].alive = false;
         entities[i].color = RAYWHITE;
     }
+}
 
+void initPowerUps(Entity *entities) {
     for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
         entities[i].type = POWER_UP;
         entities[i].bounds.width = POWER_UP_WIDTH;
         entities[i].bounds.height = POWER_UP_HEIGHT;
         entities[i].alive = false;
-        entities[i].velocity.y = 20;
+        entities[i].velocity.y = BULLET_SPEED;
         entities[i].points = 0;
         entities[i].animationFrame.nFrames = N_POWER_FRAMES;
         entities[i].animationFrame.currentFrame = 0;
@@ -243,14 +262,21 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i].animationFrame.frameBounds.width = POWER_UP_TEXTURE_WIDTH;
         entities[i].animationFrame.frameBounds.height = POWER_UP_TEXTURE_HEIGHT;
     }
+}
+
+Entity *buildEntities() {
+    Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
+
+    initShip(entities);
+    initHorde(entities);
+    initBullets(entities);
+    initPowerUps(entities);
 
     return entities;
 }
 
 GameData initGame() {
     srand(time(NULL));
-    const Color colors[] = {RAYWHITE, YELLOW, DARKPURPLE, DARKGREEN};
-    const float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
 
     InitWindow(
         SCREEN_WIDTH,
@@ -269,7 +295,7 @@ GameData initGame() {
         .wallCollisionDelay=WALL_COLISION_DELAY,
         .incrementPerLevel=0.5f,
         .firstAlive=2,
-        .entities=buildEntities(colors, delayToFire),
+        .entities=buildEntities(),
         .gameState=MENU,
         .menuItem=START,
         .BGMusic=LoadMusicStream("resources/BGMusic.ogg"),
@@ -278,7 +304,7 @@ GameData initGame() {
         .shipExplosion=LoadSound("resources/shipExplosion.ogg"),
         .alienExplosion=LoadSound("resources/alienExplosion.ogg"),
         .powerUp=LoadSound("resources/powerUp.ogg"),
-        .shipSingleShot=LoadTexture("resources/shipSingleShot.png"),
+        .shipSingleShot=LoadTexture("resources/ship.png"),
         .enemySlow=LoadTexture("resources/enemySlow.png"),
         .enemyFast=LoadTexture("resources/enemyFast.png"),
         .singleBullet=LoadTexture("resources/singleBullet.png"),
@@ -297,10 +323,11 @@ GameData initGame() {
 }
 
 void rebootGame(GameData *gameData) {
-    const Color colors[] = {RAYWHITE, YELLOW, DARKPURPLE, DARKGREEN};
-    const float delayToFire[] = {0.5f, 3.0f, 1.0f, 0.1f};
-    free(gameData->entities);
-    gameData->entities = buildEntities(colors, delayToFire);
+    initShip(gameData->entities);
+    initHorde(gameData->entities);
+    initBullets(gameData->entities);
+    initPowerUps(gameData->entities);
+
     gameData->exitWindow = false,
     gameData->canCollideOnWall = true,
     gameData->timeLastWallCollision = GetTime(),
@@ -764,14 +791,20 @@ void processInput(GameData *gameData) {
                 if (gameData->menuItem == RESTART) {
                     gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
                     gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->restartButtonSize < 80) gameData->restartButtonSize = 80;
-                    if (gameData->quitButtonSize > 100) gameData->quitButtonSize = 100;
+                    if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
+                    if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+
                     gameData->menuItem = QUIT;
                 } else {
                     gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
                     gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->restartButtonSize > 100) gameData->restartButtonSize = 100;
-                    if (gameData->quitButtonSize < 80) gameData->quitButtonSize = 80;
+                    if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+
                     gameData->menuItem = RESTART;
                 }
             }
