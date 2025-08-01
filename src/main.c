@@ -31,8 +31,10 @@
 # define N_BULLETS 10000
 # define BULLET_WIDTH 4
 # define BULLET_HEIGHT 32
-# define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS)
+# define N_POWER_UPS 10
+# define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS+N_POWER_UPS)
 # define FIRST_IDX_BULLETS (2+N_ENEMIES)
+# define FIRST_IDX_POWER_UPS (2+N_ENEMIES+N_BULLETS)
 # define SCREEN_LIMIT 250
 # define SCREEN_LIMIT_LEFT SCREEN_LIMIT
 # define SCREEN_LIMIT_RIGHT (SCREEN_WIDTH-SCREEN_LIMIT)
@@ -57,6 +59,13 @@
 # define N_BULLET_FRAMES 1
 # define REGULAR_BUTTON_SIZE 80
 # define SELECT_BUTTON_SIZE_INCREMENT 20
+# define FAST_SHOT_DROP_RATE 30
+# define POWER_UP_WIDTH 25
+# define POWER_UP_HEIGHT POWER_UP_WIDTH
+# define POWER_UP_TEXTURE_WIDTH 18
+# define POWER_UP_TEXTURE_HEIGHT POWER_UP_TEXTURE_WIDTH
+# define N_POWER_FRAMES 1
+# define POWER_UP_DURATION 2.0
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
@@ -80,6 +89,7 @@ typedef enum EntityType {
     ENEMY_SLOW,
     ENEMY_FAST,
     BULLET,
+    POWER_UP,
 } EntityType;
 
 typedef struct AnimationFrame {
@@ -106,6 +116,9 @@ typedef struct GameData {
     bool exitWindow;
     bool canCollideOnWall;
     double timeLastWallCollision;
+    double powerUpTimeOut;
+    // Used when there is an active power up and the player pauses the game
+    double powerUpRemainingTime;
     float wallCollisionDelay;
     float incrementPerLevel;
     int firstAlive;
@@ -117,13 +130,16 @@ typedef struct GameData {
     Sound alienFire;
     Sound shipExplosion;
     Sound alienExplosion;
+    Sound powerUp;
     Texture2D shipSingleShot;
     Texture2D singleBullet;
     Texture2D enemyFast;
     Texture2D enemySlow;
+    Texture2D fastShotPowerUp;
     int startButtonSize;
     int quitButtonSize;
     int restartButtonSize;
+    bool activePowerUp;
 } GameData;
 
 Entity *buildEntities(const Color colors[], const float delayToFire[]) {
@@ -199,7 +215,7 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
     entities[ENEMY_SHIP].lastShotTime = GetTime();
     entities[ENEMY_SHIP].points = 5000;
 
-    for (int i = FIRST_IDX_BULLETS; i < ENTITIES_ARRAY_SIZE; ++i) {
+    for (int i = FIRST_IDX_BULLETS; i < FIRST_IDX_POWER_UPS; ++i) {
         entities[i].type = BULLET;
         entities[i].bounds.width = BULLET_WIDTH;
         entities[i].bounds.height = BULLET_HEIGHT;
@@ -211,6 +227,21 @@ Entity *buildEntities(const Color colors[], const float delayToFire[]) {
         entities[i].animationFrame.frameBounds.height = BULLET_TEXTURE_HEIGHT;
         entities[i].alive = false;
         entities[i].color = RAYWHITE;
+    }
+
+    for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
+        entities[i].type = POWER_UP;
+        entities[i].bounds.width = POWER_UP_WIDTH;
+        entities[i].bounds.height = POWER_UP_HEIGHT;
+        entities[i].alive = false;
+        entities[i].velocity.y = 20;
+        entities[i].points = 0;
+        entities[i].animationFrame.nFrames = N_POWER_FRAMES;
+        entities[i].animationFrame.currentFrame = 0;
+        entities[i].animationFrame.frameBounds.x = 0.0f;
+        entities[i].animationFrame.frameBounds.y = 0.0f;
+        entities[i].animationFrame.frameBounds.width = POWER_UP_TEXTURE_WIDTH;
+        entities[i].animationFrame.frameBounds.height = POWER_UP_TEXTURE_HEIGHT;
     }
 
     return entities;
@@ -246,13 +277,16 @@ GameData initGame() {
         .alienFire=LoadSound("resources/alienFire.ogg"),
         .shipExplosion=LoadSound("resources/shipExplosion.ogg"),
         .alienExplosion=LoadSound("resources/alienExplosion.ogg"),
+        .powerUp=LoadSound("resources/powerUp.ogg"),
         .shipSingleShot=LoadTexture("resources/shipSingleShot.png"),
         .enemySlow=LoadTexture("resources/enemySlow.png"),
         .enemyFast=LoadTexture("resources/enemyFast.png"),
         .singleBullet=LoadTexture("resources/singleBullet.png"),
+        .fastShotPowerUp=LoadTexture("resources/fastShotPowerUp.png"),
         .startButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
         .quitButtonSize=REGULAR_BUTTON_SIZE,
         .restartButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
+        .activePowerUp=false,
     };
 
     gameData.BGMusic.looping = true;
@@ -275,6 +309,7 @@ void rebootGame(GameData *gameData) {
     gameData->firstAlive = 2,
     gameData->gameState = PLAYING;
     gameData->menuItem = START;
+    gameData->activePowerUp = false;
 }
 
 void closeGame(GameData *gameData) {
@@ -283,10 +318,12 @@ void closeGame(GameData *gameData) {
     UnloadSound(gameData->shipExplosion);
     UnloadSound(gameData->alienFire);
     UnloadSound(gameData->alienExplosion);
+    UnloadSound(gameData->powerUp);
     UnloadTexture(gameData->shipSingleShot);
     UnloadTexture(gameData->enemyFast);
     UnloadTexture(gameData->enemySlow);
     UnloadTexture(gameData->singleBullet);
+    UnloadTexture(gameData->fastShotPowerUp);
     CloseAudioDevice();
     CloseWindow();
 
@@ -385,9 +422,12 @@ void drawEntities(GameData *gameData) {
                 {
                     currentTexture = gameData->singleBullet;
                 } break;
+                case POWER_UP:
+                {
+                    currentTexture = gameData->fastShotPowerUp;
+                } break;
                 default: break;
             }
-
             /*
                 When `origin` is not 0 the sprite is inserted with an offset,
                 that's why the bug on collision detection
@@ -476,6 +516,21 @@ void fire(GameData *gameData, int shooterIdx) {
     }
 }
 
+void generatePowerUp(GameData *gameData, int srcIndex) {
+    int dropCheck = rand() % 100;
+    Entity *entities = gameData->entities;
+
+    if (dropCheck < FAST_SHOT_DROP_RATE) {
+        for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
+            if (entities[i].alive) continue;
+            entities[i].bounds.x = entities[srcIndex].bounds.x + (entities[srcIndex].bounds.width-entities[i].bounds.width)/2;
+            entities[i].bounds.y = entities[srcIndex].bounds.y + entities[srcIndex].bounds.height;
+            entities[i].alive = true;
+            entities[i].shotSrc = entities[srcIndex].type;
+            break;
+        }
+    }
+}
 
 // Implements a naive collision detection
 void detectCollisions(GameData *gameData) {
@@ -497,36 +552,47 @@ void detectCollisions(GameData *gameData) {
             lowerLeft.y
         };
 
-        for (int current_bullet = FIRST_IDX_BULLETS; current_bullet < ENTITIES_ARRAY_SIZE; ++current_bullet) {
-            if (!entities[current_bullet].alive) continue;
-            if (entities[current_bullet].shotSrc == entities[i].type) continue;
+        for (int current_collider = FIRST_IDX_BULLETS; current_collider < ENTITIES_ARRAY_SIZE; ++current_collider) {
+            if (!entities[current_collider].alive) continue;
+            if (entities[current_collider].shotSrc == entities[i].type) continue;
             if (
                 (entities[i].type >= ENEMY_SHIP && entities[i].type <= ENEMY_FAST) &&
-                (entities[current_bullet].shotSrc >= ENEMY_SHIP && entities[current_bullet].shotSrc <= ENEMY_FAST)
+                (entities[current_collider].shotSrc >= ENEMY_SHIP && entities[current_collider].shotSrc <= ENEMY_FAST)
             ) continue;
 
-            Vector2 bulletUpperLeft = {entities[current_bullet].bounds.x, entities[current_bullet].bounds.y};
-            Vector2 bulletUpperRight = {
-                bulletUpperLeft.x + BULLET_WIDTH,
-                bulletUpperLeft.y
-            };
-            Vector2 bulletLowerLeft = {
-                bulletUpperLeft.x,
-                bulletUpperLeft.y + BULLET_HEIGHT
-            };
-            Vector2 bulletLowerRight = {
-                bulletUpperLeft.x + BULLET_WIDTH,
-                bulletLowerLeft.y
-            };
+            Vector2 colliderUpperLeft;
+            Vector2 colliderUpperRight;
+            Vector2 colliderLowerLeft;
+            Vector2 colliderLowerRight;
+            if (entities[current_collider].type == BULLET) {
+                colliderUpperLeft.x = entities[current_collider].bounds.x;
+                colliderUpperLeft.y = entities[current_collider].bounds.y;
+                colliderUpperRight.x = colliderUpperLeft.x + BULLET_WIDTH;
+                colliderUpperRight.y = colliderUpperLeft.y;
+                colliderLowerLeft.x = colliderUpperLeft.x;
+                colliderLowerLeft.y = colliderUpperLeft.y + BULLET_HEIGHT;
+                colliderLowerRight.x = colliderUpperLeft.x + BULLET_WIDTH,
+                colliderLowerRight.y = colliderLowerLeft.y;
+
+            } else {
+                colliderUpperLeft.x = entities[current_collider].bounds.x;
+                colliderUpperLeft.y = entities[current_collider].bounds.y;
+                colliderUpperRight.x = colliderUpperLeft.x + POWER_UP_WIDTH;
+                colliderUpperRight.y = colliderUpperLeft.y;
+                colliderLowerLeft.x = colliderUpperLeft.x;
+                colliderLowerLeft.y = colliderUpperLeft.y + POWER_UP_HEIGHT;
+                colliderLowerRight.x = colliderUpperLeft.x + POWER_UP_WIDTH,
+                colliderLowerRight.y = colliderLowerLeft.y;
+            }
 
             if (
-                (bulletUpperRight.x >= upperLeft.x && bulletUpperRight.x <= upperRight.x && bulletUpperRight.y >= upperLeft.y && bulletUpperRight.y <= lowerLeft.y) ||
-                (bulletUpperLeft.x >= upperLeft.x && bulletUpperLeft.x <= upperRight.x && bulletUpperLeft.y >= upperLeft.y && bulletUpperLeft.y <= lowerLeft.y) ||
-                (bulletLowerRight.x >= lowerLeft.x && bulletLowerRight.x <= lowerRight.x && bulletLowerRight.y >= upperLeft.y && bulletLowerRight.y <= lowerLeft.y) ||
-                (bulletLowerLeft.x >= lowerLeft.x && bulletLowerLeft.x <= lowerRight.x && bulletLowerLeft.y >= upperLeft.y && bulletLowerLeft.y <= lowerLeft.y)
+                (colliderUpperRight.x >= upperLeft.x && colliderUpperRight.x <= upperRight.x && colliderUpperRight.y >= upperLeft.y && colliderUpperRight.y <= lowerLeft.y) ||
+                (colliderUpperLeft.x >= upperLeft.x && colliderUpperLeft.x <= upperRight.x && colliderUpperLeft.y >= upperLeft.y && colliderUpperLeft.y <= lowerLeft.y) ||
+                (colliderLowerRight.x >= lowerLeft.x && colliderLowerRight.x <= lowerRight.x && colliderLowerRight.y >= upperLeft.y && colliderLowerRight.y <= lowerLeft.y) ||
+                (colliderLowerLeft.x >= lowerLeft.x && colliderLowerLeft.x <= lowerRight.x && colliderLowerLeft.y >= upperLeft.y && colliderLowerLeft.y <= lowerLeft.y)
             ) {
                 entities[i].alive = false;
-                entities[current_bullet].alive = false;
+                entities[current_collider].alive = false;
 
                 if (i == gameData->firstAlive) {
                     for (int j = i+1; j < FIRST_IDX_BULLETS && !entities[gameData->firstAlive].alive; ++j) {
@@ -535,12 +601,27 @@ void detectCollisions(GameData *gameData) {
                 }
 
                 if (entities[i].type != SHIP) {
-                    entities[i].points += entities[i].points;
+                    entities[SHIP].points += entities[i].points;
+                    generatePowerUp(gameData, i);
                     PlaySound(gameData->alienExplosion);
                 } else {
-                    gameData->gameState = LOSE;
-                    gameData->menuItem = RESTART;
-                    PlaySound(gameData->shipExplosion);
+                    switch (entities[current_collider].type) {
+                        case POWER_UP:
+                        {
+                            entities[SHIP].alive = true;
+                            entities[SHIP].delayToFire = 0.1f;
+                            gameData->powerUpTimeOut = GetTime() + POWER_UP_DURATION;
+                            gameData->activePowerUp = true;
+                            PlaySound(gameData->powerUp);
+                        } break;
+                        case BULLET:
+                        {
+                            gameData->gameState = LOSE;
+                            gameData->menuItem = RESTART;
+                            PlaySound(gameData->shipExplosion);
+                        } break;
+                        default: break;
+                    }
                 } 
             }
         }
@@ -558,7 +639,7 @@ void updateGame(GameData *gameData) {
     switch (gameData->gameState) {
         case MENU:
         {
-            
+
         } break;
         case PLAYING:
         {
@@ -579,7 +660,7 @@ void updateGame(GameData *gameData) {
                         entities[SHIP].velocity.x = 0.0f;
                         entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
                     }
-                } else if (entities[i].type != BULLET) {
+                } else if (entities[i].type != BULLET && entities[i].type != POWER_UP) {
                     entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
                     entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
                 }
@@ -600,7 +681,7 @@ void updateGame(GameData *gameData) {
                     entities[i].velocity.x *= -1;
 
                     entities[i].velocity.x += gameData->incrementPerLevel;
-                    entities[i].velocity.y += 40.0f;
+                    entities[i].velocity.y += 50.0f;
                 }
 
                 entities[i].bounds.x += entities[i].velocity.x;
@@ -610,7 +691,7 @@ void updateGame(GameData *gameData) {
                     entities[i].velocity.x = 0.0f;
                 }
 
-                if (entities[i].type != BULLET) {
+                if (entities[i].type != BULLET && entities[i].type != POWER_UP) {
                     entities[i].velocity.y = 0.0f;
                     double currentTime = GetTime();
                     if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
@@ -623,10 +704,13 @@ void updateGame(GameData *gameData) {
                 if (GetTime()-gameData->timeLastWallCollision > gameData->wallCollisionDelay) {
                     gameData->canCollideOnWall = true;
                 }
+                if (GetTime()-gameData->powerUpTimeOut > 0.0) {
+                    gameData->activePowerUp = false;
+                    entities[SHIP].delayToFire = 0.5f;
+                }
             }
         } break;
     }
-    if (gameData->gameState != PLAYING) return;
 }
 
 void processInput(GameData *gameData) {
@@ -651,6 +735,9 @@ void processInput(GameData *gameData) {
 
             if (IsKeyPressed(KEY_SPACE)) {
                 if (gameData->menuItem == START) {
+                    if (gameData->activePowerUp) {
+                        gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
+                    }
                     gameData->gameState = PLAYING;
                 } else gameData->exitWindow = true;
             }
@@ -658,6 +745,9 @@ void processInput(GameData *gameData) {
         case PLAYING:
         {
             if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)) {
+                if (gameData->activePowerUp) {
+                    gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
+                }
                 gameData->gameState = MENU;
             }
             if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -10;
