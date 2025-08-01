@@ -576,19 +576,10 @@ void detectCollisions(GameData *gameData) {
     for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
         if (!entities[i].alive) continue;
 
-        Vector2 upperLeft = {entities[i].bounds.x, entities[i].bounds.y};
-        Vector2 upperRight = {
-            upperLeft.x + entities[i].bounds.width,
-            upperLeft.y
-        };
-        Vector2 lowerLeft = {
-            upperLeft.x,
-            upperLeft.y + entities[i].bounds.height
-        };
-        Vector2 lowerRight = {
-            lowerLeft.x + entities[i].bounds.width,
-            lowerLeft.y
-        };
+        float leftEdgeEntity = entities[i].bounds.x;
+        float rightEdgeEntity = leftEdgeEntity + entities[i].bounds.width;
+        float topEdgeEntity = entities[i].bounds.y;
+        float bottomEdgeEntity = topEdgeEntity + entities[i].bounds.height;
 
         for (int current_collider = FIRST_IDX_BULLETS; current_collider < ENTITIES_ARRAY_SIZE; ++current_collider) {
             if (!entities[current_collider].alive) continue;
@@ -598,36 +589,16 @@ void detectCollisions(GameData *gameData) {
                 (entities[current_collider].shotSrc >= ENEMY_SHIP && entities[current_collider].shotSrc <= ENEMY_FAST)
             ) continue;
 
-            Vector2 colliderUpperLeft;
-            Vector2 colliderUpperRight;
-            Vector2 colliderLowerLeft;
-            Vector2 colliderLowerRight;
-            if (entities[current_collider].type == BULLET) {
-                colliderUpperLeft.x = entities[current_collider].bounds.x;
-                colliderUpperLeft.y = entities[current_collider].bounds.y;
-                colliderUpperRight.x = colliderUpperLeft.x + BULLET_WIDTH;
-                colliderUpperRight.y = colliderUpperLeft.y;
-                colliderLowerLeft.x = colliderUpperLeft.x;
-                colliderLowerLeft.y = colliderUpperLeft.y + BULLET_HEIGHT;
-                colliderLowerRight.x = colliderUpperLeft.x + BULLET_WIDTH,
-                colliderLowerRight.y = colliderLowerLeft.y;
-
-            } else {
-                colliderUpperLeft.x = entities[current_collider].bounds.x;
-                colliderUpperLeft.y = entities[current_collider].bounds.y;
-                colliderUpperRight.x = colliderUpperLeft.x + POWER_UP_WIDTH;
-                colliderUpperRight.y = colliderUpperLeft.y;
-                colliderLowerLeft.x = colliderUpperLeft.x;
-                colliderLowerLeft.y = colliderUpperLeft.y + POWER_UP_HEIGHT;
-                colliderLowerRight.x = colliderUpperLeft.x + POWER_UP_WIDTH,
-                colliderLowerRight.y = colliderLowerLeft.y;
-            }
+            float leftEdgeCollider = entities[current_collider].bounds.x;
+            float topEdgeCollider = entities[current_collider].bounds.y;
+            float rightEdgeCollider = leftEdgeCollider + entities[current_collider].bounds.width;
+            float bottomEdgeCollider = topEdgeCollider + entities[current_collider].bounds.height;
 
             if (
-                (upperRight.x > colliderUpperLeft.x) &&
-                (upperLeft.x < colliderUpperRight.x) &&
-                (lowerRight.y > colliderUpperLeft.y) &&
-                (upperRight.y < colliderLowerRight.y)
+                (rightEdgeEntity >= leftEdgeCollider) &&
+                (leftEdgeEntity <= rightEdgeCollider) &&
+                (bottomEdgeEntity >= topEdgeCollider) &&
+                (topEdgeEntity <= bottomEdgeCollider)
             ) {
                 entities[i].alive = false;
                 entities[current_collider].alive = false;
