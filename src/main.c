@@ -624,10 +624,10 @@ void detectCollisions(GameData *gameData) {
             }
 
             if (
-                (colliderUpperRight.x >= upperLeft.x && colliderUpperRight.x <= upperRight.x && colliderUpperRight.y >= upperLeft.y && colliderUpperRight.y <= lowerLeft.y) ||
-                (colliderUpperLeft.x >= upperLeft.x && colliderUpperLeft.x <= upperRight.x && colliderUpperLeft.y >= upperLeft.y && colliderUpperLeft.y <= lowerLeft.y) ||
-                (colliderLowerRight.x >= lowerLeft.x && colliderLowerRight.x <= lowerRight.x && colliderLowerRight.y >= upperLeft.y && colliderLowerRight.y <= lowerLeft.y) ||
-                (colliderLowerLeft.x >= lowerLeft.x && colliderLowerLeft.x <= lowerRight.x && colliderLowerLeft.y >= upperLeft.y && colliderLowerLeft.y <= lowerLeft.y)
+                (upperRight.x > colliderUpperLeft.x) &&
+                (upperLeft.x < colliderUpperRight.x) &&
+                (lowerRight.y > colliderUpperLeft.y) &&
+                (upperRight.y < colliderLowerRight.y)
             ) {
                 entities[i].alive = false;
                 entities[current_collider].alive = false;
