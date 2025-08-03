@@ -696,7 +696,7 @@ void detectCollisions(GameData *gameData) {
 }
 
 void enemyAI(GameData *gameData) {
-    int enemyIndex = rand() % (N_ENEMIES*15);
+    int enemyIndex = rand() % (N_ENEMIES*10);
     if (enemyIndex > ENEMY_SHIP && enemyIndex < FIRST_IDX_BULLETS)
         fire(gameData, enemyIndex);
 }
@@ -803,7 +803,7 @@ void processInput(GameData *gameData) {
                 }
             }
 
-            if (IsKeyPressed(KEY_SPACE)) {
+            if (IsKeyPressed(KEY_ENTER)) {
                 if (gameData->menuItem == START) {
                     if (gameData->activePowerUp) {
                         gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
@@ -849,7 +849,7 @@ void processInput(GameData *gameData) {
                 }
             }
 
-            if (IsKeyPressed(KEY_SPACE)) {
+            if (IsKeyPressed(KEY_ENTER)) {
                 if (gameData->menuItem == RESTART) {
                     gameData->gameState = PLAYING;
                     rebootGame(gameData);
