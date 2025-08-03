@@ -41,7 +41,7 @@
 # define HORDE_SCREEN_LIMIT 400
 # define HORDE_LIMIT_LEFT HORDE_SCREEN_LIMIT
 # define HORDE_LIMIT_RIGHT (SCREEN_WIDTH-HORDE_SCREEN_LIMIT)
-# define WALL_COLISION_DELAY 1.0f
+# define WALL_COLISION_DELAY 0.1f
 # define SHIP_TEXTURE_WIDTH 16.0f
 # define SHIP_TEXTURE_HEIGHT 12.0f
 # define N_SHIP_FRAMES 2
@@ -69,7 +69,7 @@
 # define ENEMY_SLOW_POINTS 350
 # define ENEMY_FAST_POINTS 500
 # define ENEMY_INITIAL_VELOCITY_X 2.0f
-# define INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL 0.5f
+# define INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL 1.5f
 # define SLOW_ENEMY_DELAY_TO_FIRE 1.0f
 # define FAST_ENEMY_DELAY_TO_FIRE 0.5f
 # define SHIP_REGULAR_DELAY_TO_FIRE 0.5f
@@ -89,6 +89,8 @@
 # define PATH_ENEMY_FAST_TEX "resources/textures/enemyFastTex.png"
 # define PATH_SINGLE_BULLET_TEX "resources/textures/singleBulletTex.png"
 # define PATH_FAST_SHOT_POWER_UP_TEX "resources/textures/fastShotPowerUpTex.png"
+# define PS_ALIAS "playstation"
+# define STICK_DEADZONE 0.1F
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
@@ -172,7 +174,17 @@ typedef struct GameData {
     int quitButtonSize;
     int restartButtonSize;
     bool activePowerUp;
+    bool changeDirection;
+    int gamepad;
 } GameData;
+
+int max(int a, int b) {
+    return a ? a > b : b;
+}
+
+int min(int a, int b) {
+    return a ? a < b : b;
+}
 
 void initShip(Entity *entities) {
     entities[SHIP].type = SHIP;
@@ -334,6 +346,8 @@ GameData initGame() {
         .quitButtonSize=REGULAR_BUTTON_SIZE,
         .restartButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
         .activePowerUp=false,
+        .changeDirection=false,
+        .gamepad=0,
     };
 
     gameData.BGMusic.looping = true;
@@ -359,6 +373,8 @@ void rebootGame(GameData *gameData) {
     gameData->gameState = PLAYING;
     gameData->menuItem = START;
     gameData->activePowerUp = false;
+    gameData->changeDirection = false;
+    gameData->gamepad = 0;
     StopSound(gameData->lose);
     StopSound(gameData->victory);
     PlayMusicStream(gameData->BGMusic);
@@ -701,17 +717,59 @@ void enemyAI(GameData *gameData) {
         fire(gameData, enemyIndex);
 }
 
+void updateShip(Entity *entities) {
+    float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
+    // If the next update was going to put player ship beyond limit put it on the limit and put 0 on velocity.x
+    if (nextShipPositionX + SHIP_WIDTH > SCREEN_LIMIT_RIGHT) {
+        entities[SHIP].velocity.x = 0.0f;
+        entities[SHIP].bounds.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
+    } else if (nextShipPositionX < SCREEN_LIMIT_LEFT) {
+        entities[SHIP].velocity.x = 0.0f;
+        entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
+    }
+}
+
+// void updateEnemies(GameData *gameData) {
+//     Entity *entities = gameData->entities;
+//     bool reachedEnd = false;
+//     float maxMove;
+
+//     for (int i = gameData->firstAlive; i <= gameData->lastAlive; ++i) {
+//         if (entities[i].alive) {
+//             // Update animation
+//             entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
+//             entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
+
+//             if (i == gameData->firstAlive) {
+//                 int enemyCol = (i-2) % ENEMIES_PER_ROW;
+//                 if (entities[i].velocity.x > 0) {
+//                     int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
+//                     if (HORDE_LIMIT_RIGHT - (distRight))
+//                 } else {
+
+//                 }
+//             }
+//         }
+//     }
+// }
+
 void updateGame(GameData *gameData) {
     UpdateMusicStream(gameData->BGMusic);
     switch (gameData->gameState) {
         case PLAYING:
         {
+            Entity *entities = gameData->entities;
+            if (entities[gameData->lastAlive].bounds.y >= entities[SHIP].bounds.y) {
+                gameData->gameState = LOSE;
+                gameData->menuItem = RESTART;
+                StopMusicStream(gameData->BGMusic);
+                PlaySound(gameData->lose);
+                return;
+            }
             detectCollisions(gameData);
             enemyAI(gameData);
 
-            bool changeDirection = false;
-            for (int i = 0; i < ENTITIES_ARRAY_SIZE; ++i) {
-                Entity *entities = gameData->entities;
+            for (int i = gameData->firstAlive; i < ENTITIES_ARRAY_SIZE; ++i) {
                 if (!entities[i].alive) continue;
                 if (i == SHIP) {
                     float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
@@ -723,28 +781,40 @@ void updateGame(GameData *gameData) {
                         entities[SHIP].velocity.x = 0.0f;
                         entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
                     }
-                } else if (entities[i].type != BULLET && entities[i].type != POWER_UP) {
-                    entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
-                    entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
                 }
                 // Check if the horde needs to change direction
-                if (i == gameData->firstAlive && gameData->canCollideOnWall) {
+                if (i == gameData->firstAlive && gameData->canCollideOnWall && !gameData->changeDirection) {
                     int enemyCol = (i-2)%ENEMIES_PER_ROW;
                     int distLeft = entities[i].bounds.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
                     int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
-                    if (distLeft - HORDE_LIMIT_LEFT <= 0 || HORDE_LIMIT_RIGHT - distRight <= 0) {
-                        changeDirection = true;
+                    int increment;
+                    bool reachLimit = false;
+                    if ((distLeft + entities[i].velocity.x) - HORDE_LIMIT_LEFT <= 0) {
+                        increment = min((distLeft + entities[i].velocity.x) - HORDE_LIMIT_LEFT, entities[i].velocity.x);
+                        reachLimit = true;
+                    } else if (HORDE_LIMIT_RIGHT - (distRight + entities[i].velocity.x) <= 0) {
+                        increment = max(HORDE_LIMIT_RIGHT - (distRight + entities[i].velocity.x), entities[i].velocity.x);
+                        reachLimit = true;
+                    }
+
+                    if (reachLimit) {
+                        for (; i < FIRST_IDX_BULLETS; ++i) {
+                            if (entities[i].alive) {
+                                entities[i].bounds.x += increment;
+                                entities[i].velocity.x += gameData->incrementPerLevel;
+                                entities[i].velocity.x *= -1;
+                            }
+                        }
+                        gameData->changeDirection = true;
                         gameData->incrementPerLevel *= -1;
                         gameData->canCollideOnWall = false;
                         gameData->timeLastWallCollision = GetTime();
                     }
-                }
-
-                if (changeDirection && i < FIRST_IDX_BULLETS) {
-                    entities[i].velocity.x *= -1;
-
-                    entities[i].velocity.x += gameData->incrementPerLevel;
-                    entities[i].velocity.y += HORDE_STEP_Y_AXIS;
+                } else if (i == gameData->firstAlive && gameData->changeDirection) {
+                    for (; i < FIRST_IDX_BULLETS; ++i) {
+                        entities[i].velocity.y += HORDE_STEP_Y_AXIS;
+                    }
+                    gameData->changeDirection = false;
                 }
 
                 entities[i].bounds.x += entities[i].velocity.x;
@@ -781,102 +851,172 @@ void processInput(GameData *gameData) {
     switch (gameData->gameState) {
         case MENU:
         {
-            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
-                if (gameData->menuItem == START) {
-                    gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
-                        gameData->startButtonSize = REGULAR_BUTTON_SIZE;
-                    if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-
-                    gameData->menuItem = QUIT;
-                } else {
-                    gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                        gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
-                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
-
-                    gameData->menuItem = START;
-                }
-            }
-
-            if (IsKeyPressed(KEY_ENTER)) {
-                if (gameData->menuItem == START) {
-                    if (gameData->activePowerUp) {
-                        gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
+            if (IsGamepadAvailable(gameData->gamepad)) {
+                if (
+                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) ||
+                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))
+                ) {
+                    if (gameData->menuItem == START) {
+                        gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->startButtonSize = REGULAR_BUTTON_SIZE;
+                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+    
+                        gameData->menuItem = QUIT;
+                    } else {
+                        gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+    
+                        gameData->menuItem = START;
                     }
-                    gameData->gameState = PLAYING;
-                } else gameData->exitWindow = true;
+                }
+    
+                if (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)) {
+                    if (gameData->menuItem == START) {
+                        if (gameData->activePowerUp) {
+                            gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
+                        }
+                        gameData->gameState = PLAYING;
+                    } else gameData->exitWindow = true;
+                }
+            } else {
+                if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
+                    if (gameData->menuItem == START) {
+                        gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->startButtonSize = REGULAR_BUTTON_SIZE;
+                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+    
+                        gameData->menuItem = QUIT;
+                    } else {
+                        gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+    
+                        gameData->menuItem = START;
+                    }
+                }
+    
+                if (IsKeyPressed(KEY_ENTER)) {
+                    if (gameData->menuItem == START) {
+                        if (gameData->activePowerUp) {
+                            gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
+                        }
+                        gameData->gameState = PLAYING;
+                    } else gameData->exitWindow = true;
+                }
+                
             }
         } break;
         case PLAYING:
         {
-            if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)) {
-                if (gameData->activePowerUp) {
-                    gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
+            if (IsGamepadAvailable(gameData->gamepad)) {
+                float leftStick = GetGamepadAxisMovement(gameData->gamepad, GAMEPAD_AXIS_LEFT_X);
+                if (leftStick > -STICK_DEADZONE && leftStick < STICK_DEADZONE) leftStick = 0.0f;
+
+                if (WindowShouldClose() || IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT)) {
+                    if (gameData->activePowerUp) {
+                        gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
+                    }
+                    gameData->gameState = MENU;
                 }
-                gameData->gameState = MENU;
+
+
+                if (leftStick < 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT))
+                    gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
+                if (leftStick > 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))
+                    gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
+                if (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) fire(gameData, SHIP);
+            } else {
+                if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)) {
+                    if (gameData->activePowerUp) {
+                        gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
+                    }
+                    gameData->gameState = MENU;
+                }
+                if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
+                if (IsKeyDown(KEY_RIGHT)) gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
+                if (IsKeyPressed(KEY_SPACE)) fire(gameData, SHIP);
             }
-            if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
-            if (IsKeyDown(KEY_RIGHT)) gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
-            if (IsKeyPressed(KEY_SPACE)) fire(gameData, SHIP);
         } break;
         case WIN:
         case LOSE:
         {
-            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
-                if (gameData->menuItem == RESTART) {
-                    gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
-                        gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
-                    if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+            if (IsGamepadAvailable(gameData->gamepad)) {
+                if (
+                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) || 
+                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))
+                ) {
+                    if (gameData->menuItem == RESTART) {
+                        gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
+                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
 
-                    gameData->menuItem = QUIT;
-                } else {
-                    gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                        gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-                    if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
-                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+                        gameData->menuItem = QUIT;
+                    } else {
+                        gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
 
-                    gameData->menuItem = RESTART;
+                        gameData->menuItem = RESTART;
+                    }
+                }
+
+                if (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)) {
+                    if (gameData->menuItem == RESTART) {
+                        gameData->gameState = PLAYING;
+                        rebootGame(gameData);
+                    } else gameData->exitWindow = true;
+                }
+            } else {
+                if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
+                    if (gameData->menuItem == RESTART) {
+                        gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
+                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+    
+                        gameData->menuItem = QUIT;
+                    } else {
+                        gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+    
+                        gameData->menuItem = RESTART;
+                    }
+                }
+    
+                if (IsKeyPressed(KEY_ENTER)) {
+                    if (gameData->menuItem == RESTART) {
+                        gameData->gameState = PLAYING;
+                        rebootGame(gameData);
+                    } else gameData->exitWindow = true;
                 }
             }
-
-            if (IsKeyPressed(KEY_ENTER)) {
-                if (gameData->menuItem == RESTART) {
-                    gameData->gameState = PLAYING;
-                    rebootGame(gameData);
-                } else gameData->exitWindow = true;
-            }
         } break;
-        // While WIN and LOSE are not implmemented
-        default:
-        {
-            if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
-                if (gameData->menuItem == START) {
-                    gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->menuItem = QUIT;
-                } else {
-                    gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                    gameData->menuItem = START;
-                }
-            }
-
-            if (IsKeyDown(KEY_ENTER)) {
-                if (gameData->menuItem == START) {
-                    gameData->gameState = PLAYING;
-                } else gameData->exitWindow = true;
-            }
-        } break;
+        default: break;
     }
 }
 
