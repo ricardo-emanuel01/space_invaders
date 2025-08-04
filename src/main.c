@@ -44,7 +44,7 @@
 # define WALL_COLISION_DELAY 0.1f
 # define SHIP_TEXTURE_WIDTH 16.0f
 # define SHIP_TEXTURE_HEIGHT 12.0f
-# define N_SHIP_FRAMES 2
+# define N_SHIP_FRAMES 1
 # define ENEMY_SLOW_TEXTURE_WIDTH 16.0f
 # define ENEMY_SLOW_TEXTURE_HEIGHT ENEMY_SLOW_TEXTURE_WIDTH
 # define N_ENEMY_SLOW_FRAMES 4
@@ -96,16 +96,8 @@
 # define PATH_FAST_SHOT_POWER_UP_TEX "resources/textures/fastShotPowerUpTex.png"
 # define PS_ALIAS "playstation"
 # define STICK_DEADZONE 0.1f
+# define GAMEPAD 0
 
-
-const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
-const float delayToFire[] = {
-    SHIP_REGULAR_DELAY_TO_FIRE,
-    ENEMY_SHIP_DELAY_TO_FIRE,
-    SLOW_ENEMY_DELAY_TO_FIRE,
-    FAST_ENEMY_DELAY_TO_FIRE,
-    SHIP_BUFFED_DELAY_TO_FIRE,
-};
 
 typedef enum GameState {
     MENU,
@@ -136,38 +128,21 @@ typedef struct AnimationFrame {
 } AnimationFrame;
 
 typedef struct Entity {
-    EntityType type;
-    Rectangle bounds;
     AnimationFrame animationFrame;
     Vector2 velocity;
-    Color color;
-    bool alive;
-    float delayToFire;
-    bool canFire;
-    double lastShotTime;
+    Rectangle bounds;
+    double timeLastShot;
+    EntityType type;
     EntityType shotSrc;
     int points;
-    bool defeated;
+    bool alive;
+    bool canFire;
 } Entity;
 
 typedef struct GameData {
-    bool exitWindow;
-    bool canCollideOnWall;
-    double timeLastWallCollision;
-    double powerUpTimeOut;
-    // Used when there is an active power up and the player pauses the game
-    double powerUpRemainingTime;
-    double enemyShipAlarm;
-    double enemyShipAlarmRemainingTime;
-    float wallCollisionDelay;
-    float incrementPerLevel;
-    int firstAlive;
-    int lastAlive;
-    Entity *entities;
-    GameState gameState;
-    MenuItem menuItem;
     Music BGMusic;
     Music siren;
+    double powerUpExpire;
     Sound shipFire;
     Sound alienFire;
     Sound shipExplosion;
@@ -181,12 +156,22 @@ typedef struct GameData {
     Texture2D enemySlow;
     Texture2D enemyShip;
     Texture2D fastShotPowerUp;
+    // Used when there is an active power up and the player pauses the game
+    double powerUpRemainingTime;
+    float delayToFire[4];
+    double enemyShipAlarm;
+    double enemyShipAlarmRemainingTime;
+    Entity *entities;
+    GameState gameState;
+    MenuItem menuItem;
+    int firstAlive;
+    int lastAlive;
     int startButtonSize;
     int quitButtonSize;
     int restartButtonSize;
-    bool activePowerUp;
-    bool changeDirection;
-    int gamepad;
+    float incrementPerLevel;
+    bool exitWindow;
+    bool enemyShipDefeated;
 } GameData;
 
 void initShip(Entity *entities) {
@@ -197,17 +182,15 @@ void initShip(Entity *entities) {
     entities[SHIP].bounds.height = SHIP_HEIGHT;
     entities[SHIP].animationFrame.nFrames = N_SHIP_FRAMES;
     entities[SHIP].animationFrame.currentFrame = 1;
-    entities[SHIP].animationFrame.frameBounds.x = SHIP_TEXTURE_WIDTH;
+    entities[SHIP].animationFrame.frameBounds.x = 0.0f;
     entities[SHIP].animationFrame.frameBounds.y = 0.0f;
     entities[SHIP].animationFrame.frameBounds.width = SHIP_TEXTURE_WIDTH;
     entities[SHIP].animationFrame.frameBounds.height = SHIP_TEXTURE_HEIGHT;
     entities[SHIP].velocity.x = 0.0f;
     entities[SHIP].velocity.y = 0.0f;
-    entities[SHIP].color = WHITE;
     entities[SHIP].alive = true;
-    entities[SHIP].delayToFire = delayToFire[SHIP];
     entities[SHIP].canFire = true;
-    entities[SHIP].lastShotTime = GetTime();
+    entities[SHIP].timeLastShot = GetTime();
     entities[SHIP].points = 0;
 }
 
@@ -225,13 +208,10 @@ void initEnemyShip(Entity *entities) {
     entities[ENEMY_SHIP].animationFrame.frameBounds.height = ENEMY_SHIP_TEXTURE_HEIGHT;
     entities[ENEMY_SHIP].velocity.x = -ENEMY_SHIP_VELOCITY_X;
     entities[ENEMY_SHIP].velocity.y = 0.0f;
-    entities[ENEMY_SHIP].color = WHITE;
     entities[ENEMY_SHIP].alive = false;
-    entities[ENEMY_SHIP].delayToFire = delayToFire[ENEMY_SHIP];
     entities[ENEMY_SHIP].canFire = true;
-    entities[ENEMY_SHIP].lastShotTime = GetTime();
+    entities[ENEMY_SHIP].timeLastShot = GetTime();
     entities[ENEMY_SHIP].points = 5000;
-    entities[ENEMY_SHIP].defeated = false;
 }
 
 void initHorde(Entity *entities) {
@@ -252,11 +232,9 @@ void initHorde(Entity *entities) {
         entities[i+2].animationFrame.frameBounds.height = ENEMY_SLOW_TEXTURE_HEIGHT;
         entities[i+2].velocity.x = ENEMY_INITIAL_VELOCITY_X;
         entities[i+2].velocity.y = 0.0f;
-        entities[i+2].color = WHITE;
         entities[i+2].alive = true;
-        entities[i+2].delayToFire = delayToFire[entityType];
         entities[i+2].canFire = true;
-        entities[i+2].lastShotTime = GetTime();
+        entities[i+2].timeLastShot = GetTime();
         if (entityType == ENEMY_FAST) {
             entities[i+2].points = ENEMY_FAST_POINTS;
         } else if (entityType == ENEMY_SLOW) {
@@ -277,7 +255,6 @@ void initBullets(Entity *entities) {
         entities[i].animationFrame.frameBounds.width = BULLET_TEXTURE_WIDTH;
         entities[i].animationFrame.frameBounds.height = BULLET_TEXTURE_HEIGHT;
         entities[i].alive = false;
-        entities[i].color = RAYWHITE;
     }
 }
 
@@ -324,16 +301,6 @@ GameData initGame() {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     DisableCursor();
     GameData gameData = {
-        .exitWindow=false,
-        .canCollideOnWall=true,
-        .timeLastWallCollision=0.0,
-        .wallCollisionDelay=WALL_COLISION_DELAY,
-        .incrementPerLevel=INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
-        .firstAlive=2,
-        .lastAlive=FIRST_IDX_BULLETS-1,
-        .entities=buildEntities(),
-        .gameState=MENU,
-        .menuItem=START,
         .BGMusic=LoadMusicStream(PATH_BG_MUSIC),
         .siren=LoadMusicStream(PATH_SIREN_MUSIC),
         .shipFire=LoadSound(PATH_SHIP_FIRE_FX),
@@ -349,14 +316,25 @@ GameData initGame() {
         .enemyShip=LoadTexture(PATH_ENEMY_SHIP_TEX),
         .singleBullet=LoadTexture(PATH_SINGLE_BULLET_TEX),
         .fastShotPowerUp=LoadTexture(PATH_FAST_SHOT_POWER_UP_TEX),
+        .delayToFire={
+            SHIP_REGULAR_DELAY_TO_FIRE,
+            ENEMY_SHIP_DELAY_TO_FIRE,
+            SLOW_ENEMY_DELAY_TO_FIRE,
+            FAST_ENEMY_DELAY_TO_FIRE
+        },
+        .enemyShipAlarm=ENEMY_SHIP_ALARM,
+        .enemyShipAlarmRemainingTime=ENEMY_SHIP_ALARM,
+        .entities=buildEntities(),
+        .gameState=MENU,
+        .menuItem=START,
+        .firstAlive=2,
+        .lastAlive=FIRST_IDX_BULLETS-1,
         .startButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
         .quitButtonSize=REGULAR_BUTTON_SIZE,
         .restartButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
-        .activePowerUp=false,
-        .changeDirection=false,
-        .gamepad=0,
-        .enemyShipAlarm=ENEMY_SHIP_ALARM,
-        .enemyShipAlarmRemainingTime=ENEMY_SHIP_ALARM,
+        .incrementPerLevel=INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
+        .exitWindow=false,
+        .enemyShipDefeated=false,
     };
 
     gameData.BGMusic.looping = true;
@@ -374,20 +352,15 @@ void rebootGame(GameData *gameData) {
     initBullets(gameData->entities);
     initPowerUps(gameData->entities);
 
-    gameData->exitWindow = false,
-    gameData->canCollideOnWall = true,
-    gameData->timeLastWallCollision = GetTime(),
-    gameData->wallCollisionDelay = WALL_COLISION_DELAY,
-    gameData->incrementPerLevel = INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
-    gameData->firstAlive = 2,
-    gameData->lastAlive = FIRST_IDX_BULLETS - 1;
-    gameData->gameState = PLAYING;
-    gameData->menuItem = START;
-    gameData->activePowerUp = false;
-    gameData->changeDirection = false;
-    gameData->gamepad = 0;
     gameData->enemyShipAlarm = GetTime() + ENEMY_SHIP_ALARM;
     gameData->enemyShipAlarmRemainingTime = ENEMY_SHIP_ALARM;
+    gameData->gameState = PLAYING;
+    gameData->menuItem = START;
+    gameData->firstAlive = 2,
+    gameData->lastAlive = FIRST_IDX_BULLETS - 1;
+    gameData->incrementPerLevel = INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
+    gameData->exitWindow = false,
+    gameData->enemyShipDefeated = false;
     StopSound(gameData->lose);
     StopSound(gameData->victory);
     PlayMusicStream(gameData->BGMusic);
@@ -413,23 +386,6 @@ void closeGame(GameData *gameData) {
     CloseWindow();
 
     free(gameData->entities);
-}
-
-void drawExitMessage() {
-    DrawRectangle(
-        0,
-        (SCREEN_HEIGHT - EXIT_BANNER_HEIGHT)/2,
-        SCREEN_WIDTH,
-        EXIT_BANNER_HEIGHT,
-        RAYWHITE
-    );
-    DrawText(
-        exitMessage,
-        125,
-        SCREEN_HEIGHT/2,
-        EXIT_MESSAGE_FONT_SIZE,
-        BLACK
-    );
 }
 
 void drawMenu(GameData *gameData) {
@@ -582,12 +538,7 @@ void drawGame(GameData *gameData) {
             drawMenu(gameData);
             drawLose();
         } break;
-        // While WIN and LOSE are not implemented
-        default:
-        {
-            drawEntities(gameData);
-            drawExitMessage();
-        } break;
+        default: break;
     }
 }
 
@@ -601,7 +552,7 @@ void fire(GameData *gameData, int shooterIdx) {
     for (firstBulletAvailable = FIRST_IDX_BULLETS; firstBulletAvailable < ENTITIES_ARRAY_SIZE && entities[firstBulletAvailable].alive; ++firstBulletAvailable);
     if (!entities[firstBulletAvailable].alive) {
         entities[shooterIdx].canFire = false;
-        entities[shooterIdx].lastShotTime = GetTime();
+        entities[shooterIdx].timeLastShot = GetTime();
 
         entities[firstBulletAvailable].bounds.x = entities[shooterIdx].bounds.x + (entities[shooterIdx].bounds.width-BULLET_WIDTH)/2;
         entities[firstBulletAvailable].alive = true;
@@ -709,16 +660,15 @@ void detectCollisions(GameData *gameData) {
                     PlaySound(gameData->alienExplosion);
                 } else if (entities[i].type == ENEMY_SHIP) {
                     gameData->enemyShipAlarm = GetTime() + ENEMY_SHIP_ALARM;
-                    entities[ENEMY_SHIP].defeated = true;
+                    gameData->enemyShipDefeated = true;
                     PlaySound(gameData->shipExplosion);
                 } else {
                     switch (entities[current_collider].type) {
                         case POWER_UP:
                         {
                             entities[SHIP].alive = true;
-                            entities[SHIP].delayToFire = 0.1f;
-                            gameData->powerUpTimeOut = GetTime() + POWER_UP_DURATION;
-                            gameData->activePowerUp = true;
+                            gameData->delayToFire[SHIP] = SHIP_BUFFED_DELAY_TO_FIRE;
+                            gameData->powerUpExpire = GetTime() + POWER_UP_DURATION;
                             PlaySound(gameData->powerUp);
                         } break;
                         case BULLET:
@@ -760,18 +710,17 @@ void updateShip(GameData *gameData) {
 
     entities[SHIP].velocity.x = 0.0f;
     double currentTime = GetTime();
-    if (currentTime - entities[SHIP].lastShotTime > entities[SHIP].delayToFire) {
+    if (currentTime - entities[SHIP].timeLastShot > gameData->delayToFire[SHIP]) {
         entities[SHIP].canFire = true;
     }
 
-    if (GetTime() - gameData->powerUpTimeOut > 0.0) {
-        gameData->activePowerUp = false;
-        entities[SHIP].delayToFire = SHIP_REGULAR_DELAY_TO_FIRE;
+    if (GetTime() - gameData->powerUpExpire > 0.0) {
+        gameData->delayToFire[SHIP] = SHIP_REGULAR_DELAY_TO_FIRE;
     }
 }
 
 void updateEnemyShip(GameData *gameData) {
-    if (gameData->entities[ENEMY_SHIP].defeated) return;
+    if (gameData->enemyShipDefeated) return;
 
     Entity *entities = gameData->entities;
     if (entities[ENEMY_SHIP].alive) {
@@ -791,11 +740,11 @@ void updateEnemyShip(GameData *gameData) {
             entities[ENEMY_SHIP].bounds.x += entities[ENEMY_SHIP].velocity.x;
         }
 
-        if (GetTime() - entities[ENEMY_SHIP].lastShotTime >= entities[ENEMY_SHIP].delayToFire) {
+        if (GetTime() - entities[ENEMY_SHIP].timeLastShot >= gameData->delayToFire[ENEMY_SHIP]) {
             entities[ENEMY_SHIP].canFire = true;
         }
     } else {
-        if (!entities[ENEMY_SHIP].defeated && gameData->enemyShipAlarm <= GetTime()) {
+        if (!gameData->enemyShipDefeated && gameData->enemyShipAlarm <= GetTime()) {
             PlayMusicStream(gameData->siren);
             entities[ENEMY_SHIP].alive = true;
             entities[ENEMY_SHIP].bounds.x = SCREEN_WIDTH;
@@ -841,13 +790,17 @@ void updateEnemies(GameData *gameData) {
                 entities[i].bounds.y += HORDE_STEP_Y_AXIS;
                 entities[i].velocity.x *= -1;
                 entities[i].velocity.x += gameData->incrementPerLevel;
-                gameData->canCollideOnWall = false;
-                gameData->timeLastWallCollision = GetTime();
             }
 
             double currentTime = GetTime();
-            if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
-                entities[i].canFire = true;
+            if (entities[i].type == ENEMY_SLOW) {
+                if (currentTime - entities[i].timeLastShot > gameData->delayToFire[ENEMY_SLOW]) {
+                    entities[i].canFire = true;
+                }
+            } else {
+                if (currentTime - entities[i].timeLastShot > gameData->delayToFire[ENEMY_FAST]) {
+                    entities[i].canFire = true;
+                }
             }
         }
     }
@@ -923,7 +876,7 @@ void processInput(GameData *gameData) {
             if (
                 IsKeyPressed(KEY_DOWN) ||
                 IsKeyPressed(KEY_UP) ||
-                (IsGamepadAvailable(gameData->gamepad) && ((IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) || (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))))
+                (IsGamepadAvailable(GAMEPAD) && ((IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_UP)) || (IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_DOWN))))
             ) {
                 if (gameData->menuItem == START) {
                     gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
@@ -948,11 +901,11 @@ void processInput(GameData *gameData) {
 
             if (
                 IsKeyPressed(KEY_ENTER) ||
-                (IsGamepadAvailable(gameData->gamepad) && IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))
+                (IsGamepadAvailable(GAMEPAD) && IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))
             ) {
                 if (gameData->menuItem == START) {
-                    if (gameData->activePowerUp) {
-                        gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
+                    if (gameData->delayToFire[SHIP] != SHIP_REGULAR_DELAY_TO_FIRE) {
+                        gameData->powerUpExpire = GetTime() + gameData->powerUpRemainingTime;
                     }
                     gameData->enemyShipAlarm = GetTime() + gameData->enemyShipAlarmRemainingTime;
                     gameData->gameState = PLAYING;
@@ -962,18 +915,18 @@ void processInput(GameData *gameData) {
         case PLAYING:
         {
             float leftStick;
-            if (IsGamepadAvailable(gameData->gamepad)) {
-                leftStick = GetGamepadAxisMovement(gameData->gamepad, GAMEPAD_AXIS_LEFT_X);
+            if (IsGamepadAvailable(GAMEPAD)) {
+                leftStick = GetGamepadAxisMovement(GAMEPAD, GAMEPAD_AXIS_LEFT_X);
                 if (leftStick > -STICK_DEADZONE && leftStick < STICK_DEADZONE) leftStick = 0.0f;
             }
 
             if (
                 WindowShouldClose() ||
                 IsKeyPressed(KEY_ESCAPE) ||
-                (IsGamepadAvailable(gameData->gamepad) && (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT)))
+                (IsGamepadAvailable(GAMEPAD) && (IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_MIDDLE_RIGHT)))
             ) {
-                if (gameData->activePowerUp) {
-                    gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
+                if (gameData->delayToFire[SHIP] != SHIP_REGULAR_DELAY_TO_FIRE) {
+                    gameData->powerUpRemainingTime = gameData->powerUpExpire - GetTime();
                 }
                 gameData->enemyShipAlarmRemainingTime = gameData->enemyShipAlarm - GetTime();
                 gameData->gameState = MENU;
@@ -981,19 +934,19 @@ void processInput(GameData *gameData) {
 
             if (
                 IsKeyDown(KEY_LEFT) ||
-                (IsGamepadAvailable(gameData->gamepad) &&(leftStick < 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT)))
+                (IsGamepadAvailable(GAMEPAD) &&(leftStick < 0 || IsGamepadButtonDown(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_LEFT)))
             ) {
                 gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
             }
             if (
                 IsKeyDown(KEY_RIGHT) ||
-                (IsGamepadAvailable(gameData->gamepad) && (leftStick > 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)))
+                (IsGamepadAvailable(GAMEPAD) && (leftStick > 0 || IsGamepadButtonDown(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)))
             ) {
                 gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
             }
             if (
                 IsKeyPressed(KEY_SPACE) ||
-                (IsGamepadAvailable(gameData->gamepad) && IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))
+                (IsGamepadAvailable(GAMEPAD) && IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))
             ) {
                 fire(gameData, SHIP);
             }
@@ -1004,7 +957,7 @@ void processInput(GameData *gameData) {
             if (
                 IsKeyPressed(KEY_DOWN) ||
                 IsKeyPressed(KEY_UP) ||
-                (IsGamepadAvailable(gameData->gamepad) && ((IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) || (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))))
+                (IsGamepadAvailable(GAMEPAD) && ((IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_UP)) || (IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_DOWN))))
             ) {
                 if (gameData->menuItem == RESTART) {
                     gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
@@ -1029,7 +982,7 @@ void processInput(GameData *gameData) {
 
             if (
                 IsKeyPressed(KEY_ENTER) ||
-                (IsGamepadAvailable(gameData->gamepad) && IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))
+                (IsGamepadAvailable(GAMEPAD) && IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))
             ) {
                 if (gameData->menuItem == RESTART) {
                     gameData->gameState = PLAYING;
@@ -1041,8 +994,116 @@ void processInput(GameData *gameData) {
     }
 }
 
+void polishingTheGame(GameData *gameData) {
+    printf(
+        "shipSingleShotTexture: %ld\n",
+        sizeof(gameData->shipSingleShot)
+    );
+    printf(
+        "singleBullet: %ld\n",
+        sizeof(gameData->singleBullet)
+    );
+    printf(
+        "enemyFast: %ld\n",
+        sizeof(gameData->enemyFast)
+    );
+    printf(
+        "enemySlow: %ld\n",
+        sizeof(gameData->enemySlow)
+    );
+    printf(
+        "enemyShip: %ld\n",
+        sizeof(gameData->enemyShip)
+    );
+    printf(
+        "fastShotPowerUp: %ld\n",
+        sizeof(gameData->fastShotPowerUp)
+    );
+    printf(
+        "BGMusic: %ld\n",
+        sizeof(gameData->BGMusic)
+    );
+    printf(
+        "siren: %ld\n",
+        sizeof(gameData->siren)
+    );
+    printf(
+        "shipFire: %ld\n",
+        sizeof(gameData->shipFire)
+    );
+    printf(
+        "alienFire: %ld\n",
+        sizeof(gameData->alienFire)
+    );
+    printf(
+        "shipExplosion: %ld\n",
+        sizeof(gameData->shipExplosion)
+    );
+    printf(
+        "alienExplosion: %ld\n",
+        sizeof(gameData->alienExplosion)
+    );
+    printf(
+        "powerUp: %ld\n",
+        sizeof(gameData->powerUp)
+    );
+    printf(
+        "victory: %ld\n",
+        sizeof(gameData->victory)
+    );
+    printf(
+        "lose: %ld\n",
+        sizeof(gameData->lose)
+    );
+    printf(
+        "menuItem: %ld\n",
+        sizeof(gameData->menuItem)
+    );
+    printf(
+        "gameState: %ld\n",
+        sizeof(gameData->gameState)
+    );
+    printf(
+        "entities: %ld\n",
+        sizeof(gameData->entities)
+    );
+    printf(
+        "double: %ld\n",
+        sizeof(gameData->powerUpExpire)
+    );
+    printf(
+        "bool: %ld\n",
+        sizeof(gameData->exitWindow)
+    );
+    printf(
+        "shipSingleShotTexture: %ld\n",
+        sizeof(gameData->shipSingleShot)
+    );
+    printf(
+        "Rectangle: %ld\n",
+        sizeof(gameData->entities[SHIP].bounds)
+    );
+    printf(
+        "Animation frame: %ld\n",
+        sizeof(gameData->entities[SHIP].animationFrame)
+    );
+    printf(
+        "Vector2: %ld\n",
+        sizeof(gameData->entities[SHIP].velocity)
+    );
+    printf(
+        "EntityType: %ld\n",
+        sizeof(gameData->entities[SHIP].type)
+    );
+    printf(
+        "int: %ld\n",
+        sizeof(gameData->entities[SHIP].points)
+    );
+}
+
 int main(void) {
     GameData gameData = initGame();
+    polishingTheGame(&gameData);
 
     while (!gameData.exitWindow) {
         processInput(&gameData);
