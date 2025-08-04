@@ -51,9 +51,9 @@
 # define ENEMY_FAST_TEXTURE_WIDTH ENEMY_SLOW_TEXTURE_WIDTH
 # define ENEMY_FAST_TEXTURE_HEIGHT ENEMY_SLOW_TEXTURE_WIDTH
 # define N_ENEMY_FAST_FRAMES 4
-# define ENEMY_SHIP_TEXTURE_WIDTH ENEMY_SLOW_TEXTURE_WIDTH
-# define ENEMY_SHIP_TEXTURE_HEIGHT ENEMY_SLOW_TEXTURE_WIDTH
-# define N_ENEMY_SHIP_FRAMES 2
+# define ENEMY_SHIP_TEXTURE_WIDTH 16
+# define ENEMY_SHIP_TEXTURE_HEIGHT 10
+# define N_ENEMY_SHIP_FRAMES 1
 # define BULLET_TEXTURE_WIDTH 4.0f
 # define BULLET_TEXTURE_HEIGHT 8.0f
 # define N_BULLET_FRAMES 1
@@ -70,12 +70,15 @@
 # define ENEMY_FAST_POINTS 500
 # define ENEMY_INITIAL_VELOCITY_X 2.0f
 # define INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL 1.5f
+# define ENEMY_SHIP_VELOCITY_X 15.0f
 # define SLOW_ENEMY_DELAY_TO_FIRE 1.0f
 # define FAST_ENEMY_DELAY_TO_FIRE 0.5f
 # define SHIP_REGULAR_DELAY_TO_FIRE 0.5f
 # define SHIP_BUFFED_DELAY_TO_FIRE 0.1f
+# define ENEMY_SHIP_DELAY_TO_FIRE 0.25f
 # define HORDE_STEP_Y_AXIS 50.0f
 # define SHIP_X_MOVEMENT 10.0f
+# define ENEMY_SHIP_ALARM 3.0
 # define PATH_BG_MUSIC "resources/sounds/BGMusic.ogg"
 # define PATH_ALIEN_EXPLOSION_FX "resources/sounds/alienExplosionFX.ogg"
 # define PATH_SHIP_EXPLOSION_FX "resources/sounds/shipExplosionFX.ogg"
@@ -87,18 +90,20 @@
 # define PATH_SHIP_TEX "resources/textures/shipTex.png"
 # define PATH_ENEMY_SLOW_TEX "resources/textures/enemySlowTex.png"
 # define PATH_ENEMY_FAST_TEX "resources/textures/enemyFastTex.png"
+# define PATH_ENEMY_SHIP_TEX "resources/textures/enemyShipTex.png"
 # define PATH_SINGLE_BULLET_TEX "resources/textures/singleBulletTex.png"
 # define PATH_FAST_SHOT_POWER_UP_TEX "resources/textures/fastShotPowerUpTex.png"
 # define PS_ALIAS "playstation"
-# define STICK_DEADZONE 0.1F
+# define STICK_DEADZONE 0.1f
 
 
 const char exitMessage[] = "Are you sure you want to exit game? [Y/N]";
 const float delayToFire[] = {
     SHIP_REGULAR_DELAY_TO_FIRE,
+    ENEMY_SHIP_DELAY_TO_FIRE,
     SLOW_ENEMY_DELAY_TO_FIRE,
     FAST_ENEMY_DELAY_TO_FIRE,
-    SHIP_BUFFED_DELAY_TO_FIRE
+    SHIP_BUFFED_DELAY_TO_FIRE,
 };
 
 typedef enum GameState {
@@ -141,6 +146,7 @@ typedef struct Entity {
     double lastShotTime;
     EntityType shotSrc;
     int points;
+    bool defeated;
 } Entity;
 
 typedef struct GameData {
@@ -150,6 +156,8 @@ typedef struct GameData {
     double powerUpTimeOut;
     // Used when there is an active power up and the player pauses the game
     double powerUpRemainingTime;
+    double enemyShipAlarm;
+    double enemyShipAlarmRemainingTime;
     float wallCollisionDelay;
     float incrementPerLevel;
     int firstAlive;
@@ -169,6 +177,7 @@ typedef struct GameData {
     Texture2D singleBullet;
     Texture2D enemyFast;
     Texture2D enemySlow;
+    Texture2D enemyShip;
     Texture2D fastShotPowerUp;
     int startButtonSize;
     int quitButtonSize;
@@ -177,14 +186,6 @@ typedef struct GameData {
     bool changeDirection;
     int gamepad;
 } GameData;
-
-int max(int a, int b) {
-    return a ? a > b : b;
-}
-
-int min(int a, int b) {
-    return a ? a < b : b;
-}
 
 void initShip(Entity *entities) {
     entities[SHIP].type = SHIP;
@@ -206,6 +207,29 @@ void initShip(Entity *entities) {
     entities[SHIP].canFire = true;
     entities[SHIP].lastShotTime = GetTime();
     entities[SHIP].points = 0;
+}
+
+void initEnemyShip(Entity *entities) {
+    entities[ENEMY_SHIP].type = ENEMY_SHIP;
+    entities[ENEMY_SHIP].bounds.x = SCREEN_WIDTH;
+    entities[ENEMY_SHIP].bounds.y = ENEMY_SHIP_POS_Y;
+    entities[ENEMY_SHIP].bounds.width = ENEMY_SHIP_WIDTH;
+    entities[ENEMY_SHIP].bounds.height = ENEMY_SHIP_HEIGHT;
+    entities[ENEMY_SHIP].animationFrame.nFrames = N_ENEMY_SHIP_FRAMES;
+    entities[ENEMY_SHIP].animationFrame.currentFrame = 0;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.x = 0.0f;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.y = 0.0f;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.width = ENEMY_SHIP_TEXTURE_WIDTH;
+    entities[ENEMY_SHIP].animationFrame.frameBounds.height = ENEMY_SHIP_TEXTURE_HEIGHT;
+    entities[ENEMY_SHIP].velocity.x = -ENEMY_SHIP_VELOCITY_X;
+    entities[ENEMY_SHIP].velocity.y = 0.0f;
+    entities[ENEMY_SHIP].color = WHITE;
+    entities[ENEMY_SHIP].alive = false;
+    entities[ENEMY_SHIP].delayToFire = delayToFire[ENEMY_SHIP];
+    entities[ENEMY_SHIP].canFire = true;
+    entities[ENEMY_SHIP].lastShotTime = GetTime();
+    entities[ENEMY_SHIP].points = 5000;
+    entities[ENEMY_SHIP].defeated = false;
 }
 
 void initHorde(Entity *entities) {
@@ -237,28 +261,6 @@ void initHorde(Entity *entities) {
             entities[i+2].points = ENEMY_SLOW_POINTS;
         }
     }
-}
-
-void initEnemyShip(Entity *entities) {
-    entities[ENEMY_SHIP].type = ENEMY_SHIP;
-    entities[ENEMY_SHIP].bounds.x = (SCREEN_WIDTH - ENEMY_SHIP_WIDTH)/2;
-    entities[ENEMY_SHIP].bounds.y = ENEMY_SHIP_POS_Y;
-    entities[ENEMY_SHIP].bounds.width = ENEMY_SHIP_WIDTH;
-    entities[ENEMY_SHIP].bounds.height = ENEMY_SHIP_HEIGHT;
-    entities[ENEMY_SHIP].animationFrame.nFrames = N_ENEMY_SHIP_FRAMES;
-    entities[ENEMY_SHIP].animationFrame.currentFrame = 0;
-    entities[ENEMY_SHIP].animationFrame.frameBounds.x = 0.0f;
-    entities[ENEMY_SHIP].animationFrame.frameBounds.y = 0.0f;
-    entities[ENEMY_SHIP].animationFrame.frameBounds.width = ENEMY_SHIP_TEXTURE_WIDTH;
-    entities[ENEMY_SHIP].animationFrame.frameBounds.height = ENEMY_SHIP_TEXTURE_HEIGHT;
-    entities[ENEMY_SHIP].velocity.x = 5.0f;
-    entities[ENEMY_SHIP].velocity.y = 0.0f;
-    entities[ENEMY_SHIP].color = WHITE;
-    entities[ENEMY_SHIP].alive = false;
-    entities[ENEMY_SHIP].delayToFire = delayToFire[ENEMY_SHIP];
-    entities[ENEMY_SHIP].canFire = true;
-    entities[ENEMY_SHIP].lastShotTime = GetTime();
-    entities[ENEMY_SHIP].points = 5000;
 }
 
 void initBullets(Entity *entities) {
@@ -298,6 +300,7 @@ Entity *buildEntities() {
     Entity *entities = (Entity *)malloc((ENTITIES_ARRAY_SIZE) * sizeof(Entity));
 
     initShip(entities);
+    initEnemyShip(entities);
     initHorde(entities);
     initBullets(entities);
     initPowerUps(entities);
@@ -340,6 +343,7 @@ GameData initGame() {
         .shipSingleShot=LoadTexture(PATH_SHIP_TEX),
         .enemySlow=LoadTexture(PATH_ENEMY_SLOW_TEX),
         .enemyFast=LoadTexture(PATH_ENEMY_FAST_TEX),
+        .enemyShip=LoadTexture(PATH_ENEMY_SHIP_TEX),
         .singleBullet=LoadTexture(PATH_SINGLE_BULLET_TEX),
         .fastShotPowerUp=LoadTexture(PATH_FAST_SHOT_POWER_UP_TEX),
         .startButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
@@ -348,6 +352,8 @@ GameData initGame() {
         .activePowerUp=false,
         .changeDirection=false,
         .gamepad=0,
+        .enemyShipAlarm=ENEMY_SHIP_ALARM,
+        .enemyShipAlarmRemainingTime=ENEMY_SHIP_ALARM,
     };
 
     gameData.BGMusic.looping = true;
@@ -359,6 +365,7 @@ GameData initGame() {
 
 void rebootGame(GameData *gameData) {
     initShip(gameData->entities);
+    initEnemyShip(gameData->entities);
     initHorde(gameData->entities);
     initBullets(gameData->entities);
     initPowerUps(gameData->entities);
@@ -375,6 +382,8 @@ void rebootGame(GameData *gameData) {
     gameData->activePowerUp = false;
     gameData->changeDirection = false;
     gameData->gamepad = 0;
+    gameData->enemyShipAlarm = GetTime() + ENEMY_SHIP_ALARM;
+    gameData->enemyShipAlarmRemainingTime = ENEMY_SHIP_ALARM;
     StopSound(gameData->lose);
     StopSound(gameData->victory);
     PlayMusicStream(gameData->BGMusic);
@@ -392,6 +401,7 @@ void closeGame(GameData *gameData) {
     UnloadTexture(gameData->shipSingleShot);
     UnloadTexture(gameData->enemyFast);
     UnloadTexture(gameData->enemySlow);
+    UnloadTexture(gameData->enemyShip);
     UnloadTexture(gameData->singleBullet);
     UnloadTexture(gameData->fastShotPowerUp);
     CloseAudioDevice();
@@ -480,6 +490,10 @@ void drawEntities(GameData *gameData) {
                 case SHIP:
                 {
                     currentTexture = gameData->shipSingleShot;
+                } break;
+                case ENEMY_SHIP:
+                {
+                    currentTexture = gameData->enemyShip;
                 } break;
                 case ENEMY_SLOW:
                 {
@@ -651,6 +665,7 @@ void detectCollisions(GameData *gameData) {
         PlaySound(gameData->lose);
         return;
     }
+
     for (int i = 0; i < FIRST_IDX_BULLETS; ++i) {
         if (!entities[i].alive) continue;
         for (int current_collider = FIRST_IDX_BULLETS; current_collider < ENTITIES_ARRAY_SIZE; ++current_collider) {
@@ -681,10 +696,14 @@ void detectCollisions(GameData *gameData) {
                     }
                 }
 
-                if (entities[i].type != SHIP) {
+                if (entities[i].type > ENEMY_SHIP) {
                     entities[SHIP].points += entities[i].points;
                     generatePowerUp(gameData, i);
                     PlaySound(gameData->alienExplosion);
+                } else if (entities[i].type == ENEMY_SHIP) {
+                    gameData->enemyShipAlarm = GetTime() + ENEMY_SHIP_ALARM;
+                    entities[ENEMY_SHIP].defeated = true;
+                    PlaySound(gameData->shipExplosion);
                 } else {
                     switch (entities[current_collider].type) {
                         case POWER_UP:
@@ -697,6 +716,7 @@ void detectCollisions(GameData *gameData) {
                         } break;
                         case BULLET:
                         {
+                            entities[SHIP].alive = false;
                             gameData->gameState = LOSE;
                             gameData->menuItem = RESTART;
                             StopMusicStream(gameData->BGMusic);
@@ -717,41 +737,150 @@ void enemyAI(GameData *gameData) {
         fire(gameData, enemyIndex);
 }
 
-void updateShip(Entity *entities) {
+void updateShip(GameData *gameData) {
+    Entity *entities = gameData->entities;
     float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
+
     // If the next update was going to put player ship beyond limit put it on the limit and put 0 on velocity.x
     if (nextShipPositionX + SHIP_WIDTH > SCREEN_LIMIT_RIGHT) {
-        entities[SHIP].velocity.x = 0.0f;
         entities[SHIP].bounds.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
     } else if (nextShipPositionX < SCREEN_LIMIT_LEFT) {
-        entities[SHIP].velocity.x = 0.0f;
         entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
+    } else {
+        entities[SHIP].bounds.x += entities[SHIP].velocity.x;
+    }
+
+    entities[SHIP].velocity.x = 0.0f;
+    double currentTime = GetTime();
+    if (currentTime - entities[SHIP].lastShotTime > entities[SHIP].delayToFire) {
+        entities[SHIP].canFire = true;
+    }
+
+    if (GetTime() - gameData->powerUpTimeOut > 0.0) {
+        gameData->activePowerUp = false;
+        entities[SHIP].delayToFire = SHIP_REGULAR_DELAY_TO_FIRE;
     }
 }
 
-// void updateEnemies(GameData *gameData) {
-//     Entity *entities = gameData->entities;
-//     bool reachedEnd = false;
-//     float maxMove;
+void updateEnemyShip(GameData *gameData) {
+    if (gameData->entities[ENEMY_SHIP].defeated) return;
 
-//     for (int i = gameData->firstAlive; i <= gameData->lastAlive; ++i) {
-//         if (entities[i].alive) {
-//             // Update animation
-//             entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
-//             entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
+    Entity *entities = gameData->entities;
+    if (entities[ENEMY_SHIP].alive) {
+        fire(gameData, ENEMY_SHIP);
+        float nextPositionX = entities[ENEMY_SHIP].bounds.x + entities[ENEMY_SHIP].velocity.x;
 
-//             if (i == gameData->firstAlive) {
-//                 int enemyCol = (i-2) % ENEMIES_PER_ROW;
-//                 if (entities[i].velocity.x > 0) {
-//                     int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
-//                     if (HORDE_LIMIT_RIGHT - (distRight))
-//                 } else {
+        if (entities[ENEMY_SHIP].velocity.x < 0.0f && nextPositionX < SCREEN_LIMIT_LEFT) {
+            entities[ENEMY_SHIP].bounds.x = SCREEN_LIMIT_LEFT;
+            entities[ENEMY_SHIP].velocity.x = ENEMY_SHIP_VELOCITY_X;
+        } else if (entities[ENEMY_SHIP].velocity.x > 0.0f && nextPositionX + entities[ENEMY_SHIP].bounds.width > SCREEN_WIDTH) {
+            entities[ENEMY_SHIP].bounds.x = SCREEN_LIMIT_RIGHT - entities[ENEMY_SHIP].bounds.width;
+            entities[ENEMY_SHIP].alive = false;
+            printf("out of screen at: %lf\n\n", GetTime());
+            gameData->enemyShipAlarm = GetTime() + ENEMY_SHIP_ALARM;
+        } else {
+            entities[ENEMY_SHIP].bounds.x += entities[ENEMY_SHIP].velocity.x;
+        }
 
-//                 }
-//             }
-//         }
-//     }
-// }
+        if (GetTime() - entities[ENEMY_SHIP].lastShotTime >= entities[ENEMY_SHIP].delayToFire) {
+            entities[ENEMY_SHIP].canFire = true;
+        }
+    } else {
+        if (!entities[ENEMY_SHIP].defeated && gameData->enemyShipAlarm <= GetTime()) {
+            printf("alive at: %lf\n", GetTime());
+            entities[ENEMY_SHIP].alive = true;
+            entities[ENEMY_SHIP].bounds.x = SCREEN_WIDTH;
+            entities[ENEMY_SHIP].velocity.x = -ENEMY_SHIP_VELOCITY_X;
+            entities[ENEMY_SHIP].canFire = true;
+        }
+    }
+}
+
+void updateEnemies(GameData *gameData) {
+    Entity *entities = gameData->entities;
+    bool reachedEnd = false;
+    float maxMove;
+
+    for (int i = gameData->firstAlive; i <= gameData->lastAlive; ++i) {
+        if (entities[i].alive) {
+            // Update animation
+            entities[i].animationFrame.currentFrame = (entities[i].animationFrame.currentFrame+1) % entities[i].animationFrame.nFrames;
+            entities[i].animationFrame.frameBounds.x = entities[i].animationFrame.frameBounds.width*entities[i].animationFrame.currentFrame;
+
+            if (i == gameData->firstAlive) {
+                maxMove = entities[i].velocity.x;
+                int enemyCol = (i-2) % ENEMIES_PER_ROW;
+                if (entities[i].velocity.x > 0) {
+                    int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
+                    if (entities[i].velocity.x > 0 && HORDE_LIMIT_RIGHT - (distRight + entities[i].velocity.x) <= 0) {
+                        maxMove = entities[i].velocity.x - ((distRight + entities[i].velocity.x) - HORDE_LIMIT_RIGHT);
+                        reachedEnd = true;
+                        gameData->incrementPerLevel *= -1;
+                    }
+                } else {
+                    int distLeft = entities[i].bounds.x - (ENEMIES_WIDTH + ENEMIES_GAP_X)*enemyCol;
+                    if (entities[i].velocity.x < 0 && (distLeft + entities[i].velocity.x) - HORDE_LIMIT_LEFT <= 0) {
+                        maxMove = entities[i].velocity.x - ((distLeft + entities[i].velocity.x) - HORDE_LIMIT_LEFT);
+                        reachedEnd = true;
+                        gameData->incrementPerLevel *= -1;
+                    }
+                }
+            }
+
+            entities[i].bounds.x += maxMove;
+            if (reachedEnd) {
+                entities[i].bounds.y += HORDE_STEP_Y_AXIS;
+                entities[i].velocity.x *= -1;
+                entities[i].velocity.x += gameData->incrementPerLevel;
+                gameData->canCollideOnWall = false;
+                gameData->timeLastWallCollision = GetTime();
+            }
+
+            double currentTime = GetTime();
+            if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
+                entities[i].canFire = true;
+            }
+        }
+    }
+}
+
+void updateBullets(GameData *gameData) {
+    Entity *entities = gameData->entities;
+    for (int i = FIRST_IDX_BULLETS; i < FIRST_IDX_POWER_UPS; ++i) {
+        if (entities[i].alive) {
+            if (entities[i].bounds.y > 0.0f && entities[i].bounds.y < SCREEN_HEIGHT) {
+                entities[i].bounds.y += entities[i].velocity.y;
+            } else {
+                entities[i].alive = false;
+            }
+        }
+    }
+}
+
+void updatePowerUps(GameData *gameData) {
+    Entity *entities = gameData->entities;
+    for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
+        if (entities[i].alive) {
+            if (entities[i].bounds.y < SCREEN_HEIGHT) {
+                entities[i].bounds.y += entities[i].velocity.y;
+            } else {
+                entities[i].alive = false;
+            }
+        }
+    }
+}
+
+bool enemiesReachedShip(GameData *gameData) {
+    if (gameData->entities[gameData->lastAlive].bounds.y >= gameData->entities[SHIP].bounds.y) {
+        gameData->gameState = LOSE;
+        gameData->menuItem = RESTART;
+        StopMusicStream(gameData->BGMusic);
+        PlaySound(gameData->lose);
+        return true;
+    }
+
+    return false;
+}
 
 void updateGame(GameData *gameData) {
     UpdateMusicStream(gameData->BGMusic);
@@ -759,89 +888,20 @@ void updateGame(GameData *gameData) {
         case PLAYING:
         {
             Entity *entities = gameData->entities;
-            if (entities[gameData->lastAlive].bounds.y >= entities[SHIP].bounds.y) {
-                gameData->gameState = LOSE;
-                gameData->menuItem = RESTART;
-                StopMusicStream(gameData->BGMusic);
-                PlaySound(gameData->lose);
-                return;
+            if (enemiesReachedShip(gameData)) return;
+            if (gameData->enemyShipAlarm <= GetTime()) {
+                
             }
+
             detectCollisions(gameData);
             enemyAI(gameData);
 
-            for (int i = gameData->firstAlive; i < ENTITIES_ARRAY_SIZE; ++i) {
-                if (!entities[i].alive) continue;
-                if (i == SHIP) {
-                    float nextShipPositionX = entities[SHIP].bounds.x + entities[SHIP].velocity.x;
-                    // If the next update was going to put player ship beyond limit put it on the limit and put 0 on velocity.x
-                    if (nextShipPositionX + SHIP_WIDTH > SCREEN_LIMIT_RIGHT) {
-                        entities[SHIP].velocity.x = 0.0f;
-                        entities[SHIP].bounds.x = SCREEN_LIMIT_RIGHT - SHIP_WIDTH;
-                    } else if (nextShipPositionX < SCREEN_LIMIT_LEFT) {
-                        entities[SHIP].velocity.x = 0.0f;
-                        entities[SHIP].bounds.x = SCREEN_LIMIT_LEFT;
-                    }
-                }
-                // Check if the horde needs to change direction
-                if (i == gameData->firstAlive && gameData->canCollideOnWall && !gameData->changeDirection) {
-                    int enemyCol = (i-2)%ENEMIES_PER_ROW;
-                    int distLeft = entities[i].bounds.x - (ENEMIES_WIDTH+ENEMIES_GAP_X)*enemyCol;
-                    int distRight = entities[i].bounds.x + ENEMIES_WIDTH + (ENEMIES_WIDTH+ENEMIES_GAP_X)*(ENEMIES_PER_ROW-enemyCol-1);
-                    int increment;
-                    bool reachLimit = false;
-                    if ((distLeft + entities[i].velocity.x) - HORDE_LIMIT_LEFT <= 0) {
-                        increment = min((distLeft + entities[i].velocity.x) - HORDE_LIMIT_LEFT, entities[i].velocity.x);
-                        reachLimit = true;
-                    } else if (HORDE_LIMIT_RIGHT - (distRight + entities[i].velocity.x) <= 0) {
-                        increment = max(HORDE_LIMIT_RIGHT - (distRight + entities[i].velocity.x), entities[i].velocity.x);
-                        reachLimit = true;
-                    }
+            updateShip(gameData);
+            updateEnemyShip(gameData);
+            updateEnemies(gameData);
+            updateBullets(gameData);
+            updatePowerUps(gameData);
 
-                    if (reachLimit) {
-                        for (; i < FIRST_IDX_BULLETS; ++i) {
-                            if (entities[i].alive) {
-                                entities[i].bounds.x += increment;
-                                entities[i].velocity.x += gameData->incrementPerLevel;
-                                entities[i].velocity.x *= -1;
-                            }
-                        }
-                        gameData->changeDirection = true;
-                        gameData->incrementPerLevel *= -1;
-                        gameData->canCollideOnWall = false;
-                        gameData->timeLastWallCollision = GetTime();
-                    }
-                } else if (i == gameData->firstAlive && gameData->changeDirection) {
-                    for (; i < FIRST_IDX_BULLETS; ++i) {
-                        entities[i].velocity.y += HORDE_STEP_Y_AXIS;
-                    }
-                    gameData->changeDirection = false;
-                }
-
-                entities[i].bounds.x += entities[i].velocity.x;
-                entities[i].bounds.y += entities[i].velocity.y;
-
-                if (entities[i].type == SHIP) {
-                    entities[i].velocity.x = 0.0f;
-                }
-
-                if (entities[i].type != BULLET && entities[i].type != POWER_UP) {
-                    entities[i].velocity.y = 0.0f;
-                    double currentTime = GetTime();
-                    if (currentTime - entities[i].lastShotTime > entities[i].delayToFire) {
-                        entities[i].canFire = true;
-                    }
-                } else if (entities[i].bounds.y < 0.0f || entities[i].bounds.y > SCREEN_HEIGHT) {
-                    entities[i].alive = false;
-                }
-                
-                if (GetTime()-gameData->timeLastWallCollision > gameData->wallCollisionDelay) {
-                    gameData->canCollideOnWall = true;
-                }
-                if (GetTime()-gameData->powerUpTimeOut > 0.0) {
-                    gameData->activePowerUp = false;
-                    entities[SHIP].delayToFire = SHIP_REGULAR_DELAY_TO_FIRE;
-                }
-            }
         } break;
         default: break;
     }
@@ -851,169 +911,121 @@ void processInput(GameData *gameData) {
     switch (gameData->gameState) {
         case MENU:
         {
-            if (IsGamepadAvailable(gameData->gamepad)) {
-                if (
-                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) ||
-                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))
-                ) {
-                    if (gameData->menuItem == START) {
-                        gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->startButtonSize = REGULAR_BUTTON_SIZE;
-                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-    
-                        gameData->menuItem = QUIT;
-                    } else {
-                        gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
-    
-                        gameData->menuItem = START;
+            if (
+                IsKeyPressed(KEY_DOWN) ||
+                IsKeyPressed(KEY_UP) ||
+                (IsGamepadAvailable(gameData->gamepad) && ((IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) || (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))))
+            ) {
+                if (gameData->menuItem == START) {
+                    gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->startButtonSize = REGULAR_BUTTON_SIZE;
+                    if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+
+                    gameData->menuItem = QUIT;
+                } else {
+                    gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+
+                    gameData->menuItem = START;
+                }
+            }
+
+            if (
+                IsKeyPressed(KEY_ENTER) ||
+                (IsGamepadAvailable(gameData->gamepad) && IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))
+            ) {
+                if (gameData->menuItem == START) {
+                    if (gameData->activePowerUp) {
+                        gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
                     }
-                }
-    
-                if (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)) {
-                    if (gameData->menuItem == START) {
-                        if (gameData->activePowerUp) {
-                            gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
-                        }
-                        gameData->gameState = PLAYING;
-                    } else gameData->exitWindow = true;
-                }
-            } else {
-                if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
-                    if (gameData->menuItem == START) {
-                        gameData->startButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->startButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->startButtonSize = REGULAR_BUTTON_SIZE;
-                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-    
-                        gameData->menuItem = QUIT;
-                    } else {
-                        gameData->startButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->startButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->startButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
-    
-                        gameData->menuItem = START;
-                    }
-                }
-    
-                if (IsKeyPressed(KEY_ENTER)) {
-                    if (gameData->menuItem == START) {
-                        if (gameData->activePowerUp) {
-                            gameData->powerUpTimeOut = GetTime() + gameData->powerUpRemainingTime;
-                        }
-                        gameData->gameState = PLAYING;
-                    } else gameData->exitWindow = true;
-                }
-                
+                    gameData->enemyShipAlarm = GetTime() + gameData->enemyShipAlarmRemainingTime;
+                    gameData->gameState = PLAYING;
+                } else gameData->exitWindow = true;
             }
         } break;
         case PLAYING:
         {
+            float leftStick;
             if (IsGamepadAvailable(gameData->gamepad)) {
-                float leftStick = GetGamepadAxisMovement(gameData->gamepad, GAMEPAD_AXIS_LEFT_X);
+                leftStick = GetGamepadAxisMovement(gameData->gamepad, GAMEPAD_AXIS_LEFT_X);
                 if (leftStick > -STICK_DEADZONE && leftStick < STICK_DEADZONE) leftStick = 0.0f;
+            }
 
-                if (WindowShouldClose() || IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT)) {
-                    if (gameData->activePowerUp) {
-                        gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
-                    }
-                    gameData->gameState = MENU;
+            if (
+                WindowShouldClose() ||
+                IsKeyPressed(KEY_ESCAPE) ||
+                (IsGamepadAvailable(gameData->gamepad) && (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT)))
+            ) {
+                if (gameData->activePowerUp) {
+                    gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
                 }
+                gameData->enemyShipAlarmRemainingTime = gameData->enemyShipAlarm - GetTime();
+                gameData->gameState = MENU;
+            }
 
-
-                if (leftStick < 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT))
-                    gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
-                if (leftStick > 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT))
-                    gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
-                if (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)) fire(gameData, SHIP);
-            } else {
-                if (WindowShouldClose() || IsKeyPressed(KEY_ESCAPE)) {
-                    if (gameData->activePowerUp) {
-                        gameData->powerUpRemainingTime = gameData->powerUpTimeOut - GetTime();
-                    }
-                    gameData->gameState = MENU;
-                }
-                if (IsKeyDown(KEY_LEFT)) gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
-                if (IsKeyDown(KEY_RIGHT)) gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
-                if (IsKeyPressed(KEY_SPACE)) fire(gameData, SHIP);
+            if (
+                IsKeyDown(KEY_LEFT) ||
+                (IsGamepadAvailable(gameData->gamepad) &&(leftStick < 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_LEFT)))
+            ) {
+                gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
+            }
+            if (
+                IsKeyDown(KEY_RIGHT) ||
+                (IsGamepadAvailable(gameData->gamepad) && (leftStick > 0 || IsGamepadButtonDown(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)))
+            ) {
+                gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
+            }
+            if (
+                IsKeyPressed(KEY_SPACE) ||
+                (IsGamepadAvailable(gameData->gamepad) && IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_DOWN))
+            ) {
+                fire(gameData, SHIP);
             }
         } break;
         case WIN:
         case LOSE:
         {
-            if (IsGamepadAvailable(gameData->gamepad)) {
-                if (
-                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) || 
-                    (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))
-                ) {
-                    if (gameData->menuItem == RESTART) {
-                        gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
-                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+            if (
+                IsKeyPressed(KEY_DOWN) ||
+                IsKeyPressed(KEY_UP) ||
+                (IsGamepadAvailable(gameData->gamepad) && ((IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_UP)) || (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_LEFT_FACE_DOWN))))
+            ) {
+                if (gameData->menuItem == RESTART) {
+                    gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
+                    if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
 
-                        gameData->menuItem = QUIT;
-                    } else {
-                        gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
+                    gameData->menuItem = QUIT;
+                } else {
+                    gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
+                    gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
+                        gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
+                    if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
+                        gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
 
-                        gameData->menuItem = RESTART;
-                    }
+                    gameData->menuItem = RESTART;
                 }
+            }
 
-                if (IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)) {
-                    if (gameData->menuItem == RESTART) {
-                        gameData->gameState = PLAYING;
-                        rebootGame(gameData);
-                    } else gameData->exitWindow = true;
-                }
-            } else {
-                if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_UP)) {
-                    if (gameData->menuItem == RESTART) {
-                        gameData->restartButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->restartButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE;
-                        if (gameData->quitButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-    
-                        gameData->menuItem = QUIT;
-                    } else {
-                        gameData->restartButtonSize += SELECT_BUTTON_SIZE_INCREMENT;
-                        gameData->quitButtonSize -= SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->restartButtonSize > REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT)
-                            gameData->restartButtonSize = REGULAR_BUTTON_SIZE + SELECT_BUTTON_SIZE_INCREMENT;
-                        if (gameData->quitButtonSize < REGULAR_BUTTON_SIZE)
-                            gameData->quitButtonSize = REGULAR_BUTTON_SIZE;
-    
-                        gameData->menuItem = RESTART;
-                    }
-                }
-    
-                if (IsKeyPressed(KEY_ENTER)) {
-                    if (gameData->menuItem == RESTART) {
-                        gameData->gameState = PLAYING;
-                        rebootGame(gameData);
-                    } else gameData->exitWindow = true;
-                }
+            if (
+                IsKeyPressed(KEY_ENTER) ||
+                (IsGamepadAvailable(gameData->gamepad) && IsGamepadButtonPressed(gameData->gamepad, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT))
+            ) {
+                if (gameData->menuItem == RESTART) {
+                    gameData->gameState = PLAYING;
+                    rebootGame(gameData);
+                } else gameData->exitWindow = true;
             }
         } break;
         default: break;
