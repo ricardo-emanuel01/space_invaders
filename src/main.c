@@ -722,7 +722,7 @@ void detectCollisions(GameData *gameData) {
 }
 
 void enemyAI(GameData *gameData) {
-    int enemyIndex = rand() % (N_ENEMIES*10);
+    int enemyIndex = rand() % (N_ENEMIES*15);
     if (enemyIndex > ENEMY_SHIP && enemyIndex < FIRST_IDX_BULLETS)
         fire(gameData, enemyIndex);
 }
