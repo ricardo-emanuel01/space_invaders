@@ -80,6 +80,7 @@
 # define SHIP_X_MOVEMENT 10.0f
 # define ENEMY_SHIP_ALARM 3.0
 # define PATH_BG_MUSIC "resources/sounds/BGMusic.ogg"
+# define PATH_SIREN_MUSIC "resources/sounds/sirenMusic.ogg"
 # define PATH_ALIEN_EXPLOSION_FX "resources/sounds/alienExplosionFX.ogg"
 # define PATH_SHIP_EXPLOSION_FX "resources/sounds/shipExplosionFX.ogg"
 # define PATH_ALIEN_FIRE_FX "resources/sounds/alienFireFX.ogg"
@@ -166,6 +167,7 @@ typedef struct GameData {
     GameState gameState;
     MenuItem menuItem;
     Music BGMusic;
+    Music siren;
     Sound shipFire;
     Sound alienFire;
     Sound shipExplosion;
@@ -333,6 +335,7 @@ GameData initGame() {
         .gameState=MENU,
         .menuItem=START,
         .BGMusic=LoadMusicStream(PATH_BG_MUSIC),
+        .siren=LoadMusicStream(PATH_SIREN_MUSIC),
         .shipFire=LoadSound(PATH_SHIP_FIRE_FX),
         .alienFire=LoadSound(PATH_ALIEN_FIRE_FX),
         .shipExplosion=LoadSound(PATH_SHIP_EXPLOSION_FX),
@@ -357,6 +360,7 @@ GameData initGame() {
     };
 
     gameData.BGMusic.looping = true;
+    gameData.siren.looping = true;
 
     PlayMusicStream(gameData.BGMusic);
 
@@ -391,6 +395,7 @@ void rebootGame(GameData *gameData) {
 
 void closeGame(GameData *gameData) {
     UnloadMusicStream(gameData->BGMusic);
+    UnloadMusicStream(gameData->siren);
     UnloadSound(gameData->shipFire);
     UnloadSound(gameData->shipExplosion);
     UnloadSound(gameData->alienFire);
@@ -609,7 +614,9 @@ void fire(GameData *gameData, int shooterIdx) {
         } else {
             entities[firstBulletAvailable].velocity.y = BULLET_SPEED;
             entities[firstBulletAvailable].bounds.y = entities[shooterIdx].bounds.y + entities[shooterIdx].bounds.height;
-            PlaySound(gameData->alienFire);
+
+            if (entities[shooterIdx].type == ENEMY_SHIP)PlaySound(gameData->shipFire);
+            else PlaySound(gameData->alienFire);
         }
     }
 }
@@ -720,6 +727,7 @@ void detectCollisions(GameData *gameData) {
                             gameData->gameState = LOSE;
                             gameData->menuItem = RESTART;
                             StopMusicStream(gameData->BGMusic);
+                            StopMusicStream(gameData->siren);
                             PlaySound(gameData->shipExplosion);
                             PlaySound(gameData->lose);
                         } break;
@@ -767,6 +775,7 @@ void updateEnemyShip(GameData *gameData) {
 
     Entity *entities = gameData->entities;
     if (entities[ENEMY_SHIP].alive) {
+        UpdateMusicStream(gameData->siren);
         fire(gameData, ENEMY_SHIP);
         float nextPositionX = entities[ENEMY_SHIP].bounds.x + entities[ENEMY_SHIP].velocity.x;
 
@@ -776,7 +785,7 @@ void updateEnemyShip(GameData *gameData) {
         } else if (entities[ENEMY_SHIP].velocity.x > 0.0f && nextPositionX + entities[ENEMY_SHIP].bounds.width > SCREEN_WIDTH) {
             entities[ENEMY_SHIP].bounds.x = SCREEN_LIMIT_RIGHT - entities[ENEMY_SHIP].bounds.width;
             entities[ENEMY_SHIP].alive = false;
-            printf("out of screen at: %lf\n\n", GetTime());
+            StopMusicStream(gameData->siren);
             gameData->enemyShipAlarm = GetTime() + ENEMY_SHIP_ALARM;
         } else {
             entities[ENEMY_SHIP].bounds.x += entities[ENEMY_SHIP].velocity.x;
@@ -787,7 +796,7 @@ void updateEnemyShip(GameData *gameData) {
         }
     } else {
         if (!entities[ENEMY_SHIP].defeated && gameData->enemyShipAlarm <= GetTime()) {
-            printf("alive at: %lf\n", GetTime());
+            PlayMusicStream(gameData->siren);
             entities[ENEMY_SHIP].alive = true;
             entities[ENEMY_SHIP].bounds.x = SCREEN_WIDTH;
             entities[ENEMY_SHIP].velocity.x = -ENEMY_SHIP_VELOCITY_X;
