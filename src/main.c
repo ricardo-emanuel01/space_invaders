@@ -31,7 +31,7 @@
 # define N_BULLETS 10000
 # define BULLET_WIDTH 4
 # define BULLET_HEIGHT 32
-# define N_POWER_UPS 10
+# define N_POWER_UPS 20
 # define ENTITIES_ARRAY_SIZE (2+N_ENEMIES+N_BULLETS+N_POWER_UPS)
 # define FIRST_IDX_BULLETS (2+N_ENEMIES)
 # define FIRST_IDX_POWER_UPS (2+N_ENEMIES+N_BULLETS)
@@ -59,7 +59,7 @@
 # define N_BULLET_FRAMES 1
 # define REGULAR_BUTTON_SIZE 80
 # define SELECT_BUTTON_SIZE_INCREMENT 20
-# define FAST_SHOT_DROP_RATE 30
+# define DROP_RATE 30
 # define POWER_UP_WIDTH 25
 # define POWER_UP_HEIGHT POWER_UP_WIDTH
 # define POWER_UP_TEXTURE_WIDTH 18
@@ -78,6 +78,7 @@
 # define ENEMY_SHIP_DELAY_TO_FIRE 0.25f
 # define HORDE_STEP_Y_AXIS 50.0f
 # define SHIP_X_MOVEMENT 10.0f
+# define BUFFED_SHIP_X_MOVEMENT 15.0f
 # define ENEMY_SHIP_ALARM 3.0
 # define PATH_BG_MUSIC "resources/sounds/BGMusic.ogg"
 # define PATH_SIREN_MUSIC "resources/sounds/sirenMusic.ogg"
@@ -94,6 +95,7 @@
 # define PATH_ENEMY_SHIP_TEX "resources/textures/enemyShipTex.png"
 # define PATH_SINGLE_BULLET_TEX "resources/textures/singleBulletTex.png"
 # define PATH_FAST_SHOT_POWER_UP_TEX "resources/textures/fastShotPowerUpTex.png"
+# define PATH_FAST_MOVE_POWER_UP_TEX "resources/textures/fastMovePowerUpTex.png"
 # define PS_ALIAS "playstation"
 # define STICK_DEADZONE 0.1f
 # define GAMEPAD 0
@@ -118,7 +120,8 @@ typedef enum EntityType {
     ENEMY_SLOW,
     ENEMY_FAST,
     BULLET,
-    POWER_UP,
+    FAST_SHOT,
+    FAST_MOVE,
 } EntityType;
 
 typedef struct AnimationFrame {
@@ -142,7 +145,7 @@ typedef struct Entity {
 typedef struct GameData {
     Music BGMusic;
     Music siren;
-    double powerUpExpire;
+    double fastShotExpire;
     Sound shipFire;
     Sound alienFire;
     Sound shipExplosion;
@@ -156,13 +159,16 @@ typedef struct GameData {
     Texture2D enemySlow;
     Texture2D enemyShip;
     Texture2D fastShotPowerUp;
-    // Used when there is an active power up and the player pauses the game
-    double powerUpRemainingTime;
+    Texture2D fastMovePowerUp;
+    GameState gameState;
     float delayToFire[4];
+    // Used when there is an active power up and the player pauses the game
+    double fastShotRemainingTime;
     double enemyShipAlarm;
     double enemyShipAlarmRemainingTime;
+    double fastMoveRemainingTime;
+    double fastMoveExpire;
     Entity *entities;
-    GameState gameState;
     MenuItem menuItem;
     int firstAlive;
     int lastAlive;
@@ -170,6 +176,7 @@ typedef struct GameData {
     int quitButtonSize;
     int restartButtonSize;
     float incrementPerLevel;
+    float shipVelocityX;
     bool exitWindow;
     bool enemyShipDefeated;
 } GameData;
@@ -260,7 +267,6 @@ void initBullets(Entity *entities) {
 
 void initPowerUps(Entity *entities) {
     for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
-        entities[i].type = POWER_UP;
         entities[i].bounds.width = POWER_UP_WIDTH;
         entities[i].bounds.height = POWER_UP_HEIGHT;
         entities[i].alive = false;
@@ -316,6 +322,8 @@ GameData initGame() {
         .enemyShip=LoadTexture(PATH_ENEMY_SHIP_TEX),
         .singleBullet=LoadTexture(PATH_SINGLE_BULLET_TEX),
         .fastShotPowerUp=LoadTexture(PATH_FAST_SHOT_POWER_UP_TEX),
+        .fastMovePowerUp=LoadTexture(PATH_FAST_MOVE_POWER_UP_TEX),
+        .gameState=MENU,
         .delayToFire={
             SHIP_REGULAR_DELAY_TO_FIRE,
             ENEMY_SHIP_DELAY_TO_FIRE,
@@ -325,7 +333,6 @@ GameData initGame() {
         .enemyShipAlarm=ENEMY_SHIP_ALARM,
         .enemyShipAlarmRemainingTime=ENEMY_SHIP_ALARM,
         .entities=buildEntities(),
-        .gameState=MENU,
         .menuItem=START,
         .firstAlive=2,
         .lastAlive=FIRST_IDX_BULLETS-1,
@@ -333,6 +340,7 @@ GameData initGame() {
         .quitButtonSize=REGULAR_BUTTON_SIZE,
         .restartButtonSize=REGULAR_BUTTON_SIZE+SELECT_BUTTON_SIZE_INCREMENT,
         .incrementPerLevel=INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
+        .shipVelocityX=SHIP_X_MOVEMENT,
         .exitWindow=false,
         .enemyShipDefeated=false,
     };
@@ -356,10 +364,11 @@ void rebootGame(GameData *gameData) {
     gameData->enemyShipAlarmRemainingTime = ENEMY_SHIP_ALARM;
     gameData->gameState = PLAYING;
     gameData->menuItem = START;
-    gameData->firstAlive = 2,
+    gameData->firstAlive = 2;
     gameData->lastAlive = FIRST_IDX_BULLETS - 1;
-    gameData->incrementPerLevel = INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL,
-    gameData->exitWindow = false,
+    gameData->incrementPerLevel = INCREMENT_ENEMY_VELOCITY_X_PER_LEVEL;
+    gameData->shipVelocityX = SHIP_X_MOVEMENT;
+    gameData->exitWindow = false;
     gameData->enemyShipDefeated = false;
     StopSound(gameData->lose);
     StopSound(gameData->victory);
@@ -382,6 +391,7 @@ void closeGame(GameData *gameData) {
     UnloadTexture(gameData->enemyShip);
     UnloadTexture(gameData->singleBullet);
     UnloadTexture(gameData->fastShotPowerUp);
+    UnloadTexture(gameData->fastMovePowerUp);
     CloseAudioDevice();
     CloseWindow();
 
@@ -468,9 +478,13 @@ void drawEntities(GameData *gameData) {
                 {
                     currentTexture = gameData->singleBullet;
                 } break;
-                case POWER_UP:
+                case FAST_SHOT:
                 {
                     currentTexture = gameData->fastShotPowerUp;
+                } break;
+                case FAST_MOVE:
+                {
+                    currentTexture = gameData->fastMovePowerUp;
                 } break;
                 default: break;
             }
@@ -576,9 +590,20 @@ void generatePowerUp(GameData *gameData, int srcIndex) {
     int dropCheck = rand() % 100;
     Entity *entities = gameData->entities;
 
-    if (dropCheck < FAST_SHOT_DROP_RATE) {
+    if (dropCheck < DROP_RATE) {
         for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
             if (entities[i].alive) continue;
+            entities[i].type = FAST_SHOT;
+            entities[i].bounds.x = entities[srcIndex].bounds.x + (entities[srcIndex].bounds.width-entities[i].bounds.width)/2;
+            entities[i].bounds.y = entities[srcIndex].bounds.y + entities[srcIndex].bounds.height;
+            entities[i].alive = true;
+            entities[i].shotSrc = entities[srcIndex].type;
+            break;
+        }
+    } else if (dropCheck > 100 - DROP_RATE) {
+        for (int i = FIRST_IDX_POWER_UPS; i < ENTITIES_ARRAY_SIZE; ++i) {
+            if (entities[i].alive) continue;
+            entities[i].type = FAST_MOVE;
             entities[i].bounds.x = entities[srcIndex].bounds.x + (entities[srcIndex].bounds.width-entities[i].bounds.width)/2;
             entities[i].bounds.y = entities[srcIndex].bounds.y + entities[srcIndex].bounds.height;
             entities[i].alive = true;
@@ -664,11 +689,18 @@ void detectCollisions(GameData *gameData) {
                     PlaySound(gameData->shipExplosion);
                 } else {
                     switch (entities[current_collider].type) {
-                        case POWER_UP:
+                        case FAST_SHOT:
                         {
                             entities[SHIP].alive = true;
                             gameData->delayToFire[SHIP] = SHIP_BUFFED_DELAY_TO_FIRE;
-                            gameData->powerUpExpire = GetTime() + POWER_UP_DURATION;
+                            gameData->fastShotExpire = GetTime() + POWER_UP_DURATION;
+                            PlaySound(gameData->powerUp);
+                        } break;
+                        case FAST_MOVE:
+                        {
+                            entities[SHIP].alive = true;
+                            gameData->shipVelocityX = BUFFED_SHIP_X_MOVEMENT;
+                            gameData->fastMoveExpire = GetTime() + POWER_UP_DURATION;
                             PlaySound(gameData->powerUp);
                         } break;
                         case BULLET:
@@ -714,8 +746,11 @@ void updateShip(GameData *gameData) {
         entities[SHIP].canFire = true;
     }
 
-    if (GetTime() - gameData->powerUpExpire > 0.0) {
+    if (GetTime() - gameData->fastShotExpire > 0.0) {
         gameData->delayToFire[SHIP] = SHIP_REGULAR_DELAY_TO_FIRE;
+    }
+    if (GetTime() - gameData->fastMoveExpire > 0.0) {
+        gameData->shipVelocityX = SHIP_X_MOVEMENT;
     }
 }
 
@@ -905,7 +940,10 @@ void processInput(GameData *gameData) {
             ) {
                 if (gameData->menuItem == START) {
                     if (gameData->delayToFire[SHIP] != SHIP_REGULAR_DELAY_TO_FIRE) {
-                        gameData->powerUpExpire = GetTime() + gameData->powerUpRemainingTime;
+                        gameData->fastShotExpire = GetTime() + gameData->fastShotRemainingTime;
+                    }
+                    if (gameData->shipVelocityX != SHIP_X_MOVEMENT) {
+                        gameData->fastMoveExpire = GetTime() + gameData->fastMoveRemainingTime;
                     }
                     gameData->enemyShipAlarm = GetTime() + gameData->enemyShipAlarmRemainingTime;
                     gameData->gameState = PLAYING;
@@ -926,7 +964,10 @@ void processInput(GameData *gameData) {
                 (IsGamepadAvailable(GAMEPAD) && (IsGamepadButtonPressed(GAMEPAD, GAMEPAD_BUTTON_MIDDLE_RIGHT)))
             ) {
                 if (gameData->delayToFire[SHIP] != SHIP_REGULAR_DELAY_TO_FIRE) {
-                    gameData->powerUpRemainingTime = gameData->powerUpExpire - GetTime();
+                    gameData->fastShotRemainingTime = gameData->fastShotExpire - GetTime();
+                }
+                if (gameData->shipVelocityX != SHIP_X_MOVEMENT) {
+                    gameData->fastMoveRemainingTime = gameData->fastMoveExpire - GetTime();
                 }
                 gameData->enemyShipAlarmRemainingTime = gameData->enemyShipAlarm - GetTime();
                 gameData->gameState = MENU;
@@ -936,13 +977,13 @@ void processInput(GameData *gameData) {
                 IsKeyDown(KEY_LEFT) ||
                 (IsGamepadAvailable(GAMEPAD) &&(leftStick < 0 || IsGamepadButtonDown(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_LEFT)))
             ) {
-                gameData->entities[0].velocity.x = -SHIP_X_MOVEMENT;
+                gameData->entities[0].velocity.x = -gameData->shipVelocityX;
             }
             if (
                 IsKeyDown(KEY_RIGHT) ||
                 (IsGamepadAvailable(GAMEPAD) && (leftStick > 0 || IsGamepadButtonDown(GAMEPAD, GAMEPAD_BUTTON_LEFT_FACE_RIGHT)))
             ) {
-                gameData->entities[0].velocity.x = SHIP_X_MOVEMENT;
+                gameData->entities[0].velocity.x = gameData->shipVelocityX;
             }
             if (
                 IsKeyPressed(KEY_SPACE) ||
@@ -1069,7 +1110,7 @@ void polishingTheGame(GameData *gameData) {
     );
     printf(
         "double: %ld\n",
-        sizeof(gameData->powerUpExpire)
+        sizeof(gameData->fastShotExpire)
     );
     printf(
         "bool: %ld\n",
@@ -1103,7 +1144,7 @@ void polishingTheGame(GameData *gameData) {
 
 int main(void) {
     GameData gameData = initGame();
-    polishingTheGame(&gameData);
+    // polishingTheGame(&gameData);
 
     while (!gameData.exitWindow) {
         processInput(&gameData);
