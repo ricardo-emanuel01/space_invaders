@@ -96,7 +96,6 @@
 # define PATH_SINGLE_BULLET_TEX "resources/textures/singleBulletTex.png"
 # define PATH_FAST_SHOT_POWER_UP_TEX "resources/textures/fastShotPowerUpTex.png"
 # define PATH_FAST_MOVE_POWER_UP_TEX "resources/textures/fastMovePowerUpTex.png"
-# define PS_ALIAS "playstation"
 # define STICK_DEADZONE 0.1f
 # define GAMEPAD 0
 
